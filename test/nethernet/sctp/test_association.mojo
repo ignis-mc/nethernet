@@ -1061,7 +1061,9 @@ def test_counters_and_idle_state() raises:
     assert_equal(a.buffered_amount(), 3000)
     var sent = _out(a, 10)
     assert_equal(len(sent), 3)
-    assert_equal(a.next_timeout().value(), 1010)
+    # The tail loss probe (2 * SRTT + 10 ms, no RTT sample yet) comes
+    # before T3-rtx (the initial RTO, 1 s).
+    assert_equal(a.next_timeout().value(), 20)
     var s = a.stats()
     assert_equal(s.messages_out, 1)
     assert_equal(s.data_chunks_out, 3)

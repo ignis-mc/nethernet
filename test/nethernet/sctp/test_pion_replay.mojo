@@ -97,6 +97,28 @@ def _chunks_of(packets: List[List[UInt8]], kind: UInt8) raises -> List[String]:
     return out^
 
 
+def _first_sends_of_data(packets: List[List[UInt8]]) raises -> List[String]:
+    """Hex of each DATA chunk's first transmission, I bit cleared.
+
+    Unlike pion, the Mojo sender sets the SACK-IMMEDIATELY bit on the last
+    chunk of a burst and, when the peer's SACK is late, probes the tail by
+    sending that chunk again. The recorded pion peer delays its SACKs (its
+    own peer never set the bit), so the replay sees those probes.
+    """
+    var out = List[String]()
+    for chunk in _chunks_of(packets, CHUNK_DATA):
+        # Byte 1 of the chunk header holds the flags; I is 0x08.
+        var flags = Int(hex_decode(String(chunk[byte=2:4]))[0]) & ~0x08
+        var masked = (
+            String(chunk[byte=0:2])
+            + hex_encode(Span([UInt8(flags)]))
+            + String(chunk[byte=4:])
+        )
+        if masked not in out:
+            out.append(masked)
+    return out^
+
+
 def _values_of(
     packets: List[List[UInt8]], kind: UInt8
 ) raises -> List[List[UInt8]]:
@@ -277,8 +299,8 @@ def _check_common(r: Replay, lost_unordered: Bool) raises:
     assert_equal(len(got), at + 2)
 
     # DATA: the two DCEP ACKs, byte for byte what pion B sent.
-    var my_data = _chunks_of(r.mine, CHUNK_DATA)
-    var their_data = _chunks_of(r.theirs, CHUNK_DATA)
+    var my_data = _first_sends_of_data(r.mine)
+    var their_data = _first_sends_of_data(r.theirs)
     assert_equal(len(their_data), 2)
     assert_equal(len(my_data), 2)
     assert_equal(my_data[0], their_data[0])
@@ -335,9 +357,12 @@ def _check_common(r: Replay, lost_unordered: Bool) raises:
     assert_equal(resets, 1)
     assert_equal(closed, 1)
     assert_equal(r.assoc.state(), SCTP_STATE_CLOSED)
-    # pion acknowledged everything we sent; nothing was retransmitted.
-    assert_equal(r.assoc.stats().retransmits, 0)
-    assert_equal(r.assoc.stats().t3_expiries, 0)
+    # pion acknowledged everything we sent. The only retransmissions are
+    # tail probes that its delayed SACKs let fire; nothing was found lost.
+    var stats = r.assoc.stats()
+    assert_equal(stats.retransmits, stats.loss_probes)
+    assert_equal(stats.rack_losses, 0)
+    assert_equal(stats.t3_expiries, 0)
 
 
 def test_replay_pion_client_against_passive_side() raises:

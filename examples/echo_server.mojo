@@ -52,7 +52,8 @@ def print_stats(conn: Conn):
     var s = conn.sctp_stats()
     print(
         t"SCTP data_out={s.data_chunks_out} retransmits={s.retransmits}"
-        t" fast={s.fast_retransmits} t3={s.t3_expiries}"
+        t" fast={s.fast_retransmits} rack={s.rack_losses}"
+        t" probes={s.loss_probes} t3={s.t3_expiries}"
         t" dup_in={s.duplicate_tsns} data_in={s.data_chunks_in}"
     )
 

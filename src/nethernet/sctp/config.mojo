@@ -174,6 +174,10 @@ struct SctpStats(ImplicitlyCopyable):
     """DATA chunks given up under a retransmission limit."""
     var forward_tsns_out: Int
     """FORWARD-TSN chunks sent."""
+    var loss_probes: Int
+    """Tail loss probes sent."""
+    var rack_losses: Int
+    """DATA chunks found lost because a later transmission was acked."""
 
     def __init__(out self):
         """Creates counters that are all zero."""
@@ -193,3 +197,5 @@ struct SctpStats(ImplicitlyCopyable):
         self.t3_expiries = 0
         self.abandoned_chunks = 0
         self.forward_tsns_out = 0
+        self.loss_probes = 0
+        self.rack_losses = 0
