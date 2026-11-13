@@ -72,10 +72,40 @@ depends on:
 - **A zero-length or one-byte data-channel message is fatal** on the Go
   side: every message carries the segment-count byte plus at least one byte.
 
+## Real game clients
+
+Checked by hand on 2026-11-13, on loopback:
+
+- **Vanilla Minecraft 1.26.60** (Linux build under mcpelauncher; its
+  transport is libwebrtc, not pion). It probes and joins a Mojo listener over
+  HTTP signaling, shows the "Trust this server?" prompt for the Mojo identity
+  assertion and, once trusted, opens both data channels and sends
+  RequestNetworkSettings. Through `examples/relay.mojo` in front of a
+  Dragonfly server it completes the whole join: login, resource pack
+  negotiation, StartGame and chunks, and Dragonfly logs the player joining.
+  The same client joining Dragonfly directly behaves the same in that world.
+- **Cinnabar** (go-nethernet behind gophertunnel) joins a Mojo listener the
+  same way and sends its first game packet after the trust prompt.
+
+Two things to know when testing with a real client:
+
+- The client starts ICE only after the trust prompt is accepted. A prompt
+  left open longer than the listener's negotiation timeout fails the join
+  ("Door"); go-nethernet's listener behaves the same.
+- A Bedrock server compares the NetherNet identity key with the login's key,
+  so a relay must dial upstream anonymously and the server must allow it.
+
+## Loss on the wire
+
+`interop/go` has a `lossy-proxy` command (see `interop/README.md`) that puts
+real datagram loss between pion and the Mojo stack. With about 1 MB of echoes
+per connection: at 5% loss each way the Mojo side recovers without T3-rtx
+expiries, and at 10% it takes 3-34 s, against 18-28 s for go-nethernet with
+itself through the same relay. At 20% every pair, go-nethernet with itself
+included, stalls past the 170 s limit.
+
 ## Not covered
 
-- The vanilla Minecraft client and server.
-- Packet loss, reordering and delay end to end. The SCTP, DTLS and ICE state
-  machines are tested under simulated loss in their unit tests; the interop
-  runs use a loss-free loopback.
+- The vanilla dedicated server (BDS) as a peer.
+- Reordering and delay end to end; loss only through `lossy-proxy`.
 - Xbox Live signaling, STUN/TURN, IPv6.
