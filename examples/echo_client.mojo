@@ -17,6 +17,7 @@ Options:
     --expect-fail       succeed only if the server rejects the connection
     --bye               ask the server to close the connection
     --close-after-write N  finally send N bytes and close without waiting
+    --stats             print SCTP retransmission counters before closing
     --timeout SECONDS   give up after this long (default 30)
 """
 
@@ -45,6 +46,18 @@ def flag(name: StringSpan) -> Bool:
         if arg == name:
             return True
     return False
+
+
+def print_stats(conn: Conn):
+    """Prints the connection's SCTP recovery counters when `--stats` is set."""
+    if not flag("--stats"):
+        return
+    var s = conn.sctp_stats()
+    print(
+        t"SCTP data_out={s.data_chunks_out} retransmits={s.retransmits}"
+        t" fast={s.fast_retransmits} t3={s.t3_expiries}"
+        t" dup_in={s.duplicate_tsns} data_in={s.data_chunks_in}"
+    )
 
 
 def payload(size: Int) -> List[UInt8]:
@@ -109,6 +122,7 @@ def exercise(mut conn: Conn, deadline: Int) raises:
         print("OK")
         return
 
+    print_stats(conn)
     if flag("--bye"):
         var bye: List[UInt8] = [0x42, 0x59, 0x45]
         conn.write(Span(bye))

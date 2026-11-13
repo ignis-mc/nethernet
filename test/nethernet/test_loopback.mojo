@@ -169,6 +169,12 @@ def test_large_message_is_segmented() raises:
         if got[i] != big[i]:
             same = False
     assert_true(same)
+    # 600000 bytes need at least 600000 / 1156 DATA chunks each way.
+    var sent = pair.acceptor.sctp_stats()
+    var received = pair.dialer.sctp_stats()
+    assert_true(sent.data_chunks_out >= 519)
+    assert_true(received.data_chunks_in >= 519)
+    assert_equal(received.messages_in, sent.messages_out)
 
 
 def test_close_is_seen_by_peer() raises:

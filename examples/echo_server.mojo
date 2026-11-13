@@ -13,6 +13,8 @@ Options:
     --allow-anonymous  accept offers without an identity assertion
     --conns N          exit after N connections have closed (default: never)
     --expect-last N    fail unless each connection's last message has N bytes
+    --stats            print SCTP retransmission counters for each closed
+                       connection
     --timeout SECONDS  exit with an error after this long (default: never)
 """
 
@@ -41,6 +43,18 @@ def flag(name: StringSpan) -> Bool:
         if arg == name:
             return True
     return False
+
+
+def print_stats(conn: Conn):
+    """Prints the connection's SCTP recovery counters when `--stats` is set."""
+    if not flag("--stats"):
+        return
+    var s = conn.sctp_stats()
+    print(
+        t"SCTP data_out={s.data_chunks_out} retransmits={s.retransmits}"
+        t" fast={s.fast_retransmits} t3={s.t3_expiries}"
+        t" dup_in={s.duplicate_tsns} data_in={s.data_chunks_in}"
+    )
 
 
 def serve[
@@ -102,6 +116,7 @@ def serve[
                         break
                     last_sizes[i] = len(late.value())
                 var done = conns.pop(i)
+                print_stats(done)
                 var last_size = last_sizes.pop(i)
                 print("CLOSED", done.close_reason(), "last message", last_size)
                 if expect_last > 0 and last_size != expect_last:
