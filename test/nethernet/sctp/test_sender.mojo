@@ -335,10 +335,17 @@ def test_tail_loss_probe_resends_the_last_chunk() raises:
     assert_equal(len(r.data), 1)
     assert_equal(r.data[0].tsn, 2)
     assert_equal(s.loss_probes, 1)
-    # One probe per tail: without an ack, the next wait is T3-rtx.
-    s.on_probe_expired(now + 100)
-    assert_equal(len(_flush(s, now + 100).data), 0)
-    assert_equal(s.loss_probes, 1)
+    # The probe was lost too: probe again, each time waiting twice as long.
+    var base = 2 * s.rto.srtt() + 10
+    assert_equal(s.probe.deadline - now, 2 * base)
+    now = s.probe.deadline
+    s.on_probe_expired(now)
+    r = _flush(s, now)
+    assert_equal(len(r.data), 1)
+    assert_equal(r.data[0].tsn, 2)
+    assert_equal(s.loss_probes, 2)
+    assert_equal(s.probe.deadline - now, 4 * base)
+    # An ack ends the probing.
     _ack(s, 2, now + 5)
     assert_true(s.is_drained())
     assert_false(s.probe.armed)
