@@ -71,6 +71,20 @@ def hmac[H: Hash](key: Span[UInt8, _], ...) -> Array[UInt8, H.DIGEST_SIZE]: ...
   plain `raises` function.
 - Integer arithmetic wraps on fixed-width types; conversions between integer
   types are always explicit (`UInt32(x)`).
+- Values are destroyed right after their **last use**, not at end of scope.
+  A socket whose descriptor was copied out with `.fd()` is closed as soon as
+  the socket object is no longer mentioned; keep using the owner (or write
+  `_ = sock.fd()` after the wait) while the descriptor is in use.
+- Keep structs that get moved small. A struct with kilobytes of inline
+  `Array` fields is moved element by element, and LLVM's instruction selector
+  is quadratic in that: boxing the AES state took the full-stack build from
+  265 s to 20 s. Put large state behind `OwnedPointer[T]`
+  (`std.memory`) or in a `List`.
+- In `__init__(out self) raises`, do everything that can raise into locals
+  first and assign the fields afterwards.
+- `Dict.__getitem__` raises; call it from a `raises` function.
+- Fields of a non-copyable struct cannot be moved out individually; add a
+  consuming method (`def into_x(deinit self) -> X: return self.x^`).
 - An `Array[UInt8, size_of[UInt32]()]` does not unify with
   `Array[UInt8, 4]`; build fixed arrays by hand instead of `as_bytes`.
 

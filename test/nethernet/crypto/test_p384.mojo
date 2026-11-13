@@ -1,0 +1,2188 @@
+from nethernet.crypto.ecdsa_der import ecdsa_signature_from_der
+from nethernet.crypto.p384 import (
+    P384_POINT_LEN,
+    P384_SCALAR_LEN,
+    P384_SIGNATURE_LEN,
+    p384_ecdh,
+    p384_private_key_from_bytes,
+    p384_public_key,
+    p384_sign,
+    p384_verify,
+)
+from nethernet.crypto.sha512 import sha384
+from nethernet.wire import bytes_of, hex_decode, hex_encode
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
+
+
+def _stream(label: StringSpan, count: Int) -> List[UInt8]:
+    # Deterministic test bytes: SHA-384(label || counter), concatenated.
+    var out = List[UInt8](capacity=count)
+    var counter = UInt8(0)
+    while len(out) < count:
+        var block = bytes_of(label)
+        block.append(counter)
+        var digest = sha384(Span(block))
+        for byte in digest:
+            if len(out) < count:
+                out.append(byte)
+        counter += 1
+    return out^
+
+
+def _public_hex(private_key: StringSpan) raises -> String:
+    var d = hex_decode(private_key)
+    var point = p384_public_key(Span(d))
+    return hex_encode(Span(point))
+
+
+def _public_fails(private_key: StringSpan) raises -> Bool:
+    var d = hex_decode(private_key)
+    try:
+        _ = p384_public_key(Span(d))
+        return False
+    except e:
+        return True
+
+
+def _sign_fails(private_key: StringSpan) raises -> Bool:
+    var d = hex_decode(private_key)
+    var digest = _stream("digest", 48)
+    try:
+        _ = p384_sign(Span(d), Span(digest))
+        return False
+    except e:
+        return True
+
+
+def _ecdh_hex(private_key: StringSpan, public_key: StringSpan) raises -> String:
+    # The shared secret in hex, or "error" if the function raised.
+    var d = hex_decode(private_key)
+    var point = hex_decode(public_key)
+    try:
+        var shared = p384_ecdh(Span(d), Span(point))
+        return hex_encode(Span(shared))
+    except e:
+        return "error"
+
+
+def _derive_hex(seed: StringSpan) raises -> String:
+    var bytes = hex_decode(seed)
+    var d = p384_private_key_from_bytes(Span(bytes))
+    return hex_encode(Span(d))
+
+
+def _verify_hex(
+    public_key: StringSpan, digest: StringSpan, signature: StringSpan
+) raises -> Bool:
+    var key = hex_decode(public_key)
+    var d = hex_decode(digest)
+    var sig = hex_decode(signature)
+    return p384_verify(Span(key), Span(d), Span(sig))
+
+
+def _check_message(
+    label: StringSpan,
+    public_key: StringSpan,
+    message: StringSpan,
+    signature: StringSpan,
+    valid: Bool,
+) raises:
+    # Verifies a raw signature over SHA-384(message).
+    var key = hex_decode(public_key)
+    var msg = hex_decode(message)
+    var sig = hex_decode(signature)
+    var digest = sha384(Span(msg))
+    assert_equal(
+        p384_verify(Span(key), Span(digest), Span(sig)),
+        valid,
+        msg=String(label),
+    )
+
+
+def _check_der_message(
+    label: StringSpan,
+    public_key: StringSpan,
+    message: StringSpan,
+    der: StringSpan,
+    valid: Bool,
+) raises:
+    # As TLS does: strict DER decoding first, then verification.
+    var key = hex_decode(public_key)
+    var msg = hex_decode(message)
+    var encoded = hex_decode(der)
+    var digest = sha384(Span(msg))
+    var ok: Bool
+    try:
+        var sig = ecdsa_signature_from_der(Span(encoded), P384_SCALAR_LEN)
+        ok = p384_verify(Span(key), Span(digest), Span(sig))
+    except e:
+        ok = False
+    assert_equal(ok, valid, msg=String(label))
+
+
+def test_lengths() raises:
+    assert_equal(P384_SCALAR_LEN, 48)
+    assert_equal(P384_POINT_LEN, 97)
+    assert_equal(P384_SIGNATURE_LEN, 96)
+
+
+def test_rfc6979_key_and_signatures() raises:
+    # RFC 6979 A.2.6: key pair and the SHA-384 signatures.
+    var private_key = hex_decode(
+        "6b9d3dad2e1b8c1c05b19875b6659f4de23c3b667bf297ba9aa47740787137d896d5724e4c70a825f872c9ea60d2edf5"
+    )
+    var public_key = p384_public_key(Span(private_key))
+    assert_equal(
+        hex_encode(Span(public_key)),
+        "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720",
+    )
+    var sample = bytes_of("sample")
+    var sample_digest = sha384(Span(sample))
+    var sample_sig = p384_sign(Span(private_key), Span(sample_digest))
+    assert_equal(
+        hex_encode(Span(sample_sig)),
+        "94edbb92a5ecb8aad4736e56c691916b3f88140666ce9fa73d64c4ea95ad133c81a648152e44acf96e36dd1e80fabe4699ef4aeb15f178cea1fe40db2603138f130e740a19624526203b6351d0a3a94fa329c145786e679e7b82c71a38628ac8",
+    )
+    assert_true(
+        p384_verify(Span(public_key), Span(sample_digest), Span(sample_sig))
+    )
+    var test = bytes_of("test")
+    var test_digest = sha384(Span(test))
+    var test_sig = p384_sign(Span(private_key), Span(test_digest))
+    assert_equal(
+        hex_encode(Span(test_sig)),
+        "8203b63d3c853e8d77227fb377bcf7b7b772e97892a80f36ab775d509d7a5feb0542a7f0812998da8f1dd3ca3cf023dbddd0760448d42d8a43af45af836fce4de8be06b485e9b61b827c2f13173923e06a739f040649a667bf3b828246baa5a5",
+    )
+    assert_true(
+        p384_verify(Span(public_key), Span(test_digest), Span(test_sig))
+    )
+    # Each signature belongs to its own message only.
+    assert_false(
+        p384_verify(Span(public_key), Span(test_digest), Span(sample_sig))
+    )
+    assert_false(
+        p384_verify(Span(public_key), Span(sample_digest), Span(test_sig))
+    )
+
+
+def test_rfc5903_ecdh() raises:
+    # RFC 5903 section 8.2.
+    var i = "099f3c7034d4a2c699884d73a375a67f7624ef7c6b3c0f160647b67414dce655e35b538041e649ee3faef896783ab194"
+    var gi = "04667842d7d180ac2cde6f74f37551f55755c7645c20ef73e31634fe72b4c55ee6de3ac808acb4bdb4c88732aee95f41aa9482ed1fc0eeb9cafc4984625ccfc23f65032149e0e144ada024181535a0f38eeb9fcff3c2c947dae69b4c634573a81c"
+    var r = "41cb0779b4bdb85d47846725fbec3c9430fab46cc8dc5060855cc9bda0aa2942e0308312916b8ed2960e4bd55a7448fc"
+    var gr = "04e558dbef53eecde3d3fccfc1aea08a89a987475d12fd950d83cfa41732bc509d0d1ac43a0336def96fda41d0774a3571dcfbec7aacf3196472169e838430367f66eebe3c6e70c416dd5f0c68759dd1fff83fa40142209dff5eaad96db9e6386c"
+    var shared = "11187331c279962d93d604243fd592cb9d0a926f422e47187521287e7156c5c4d603135569b9e9d09cf5d4a270f59746"
+    assert_equal(_public_hex(i), gi)
+    assert_equal(_public_hex(r), gr)
+    assert_equal(_ecdh_hex(i, gr), shared)
+    assert_equal(_ecdh_hex(r, gi), shared)
+
+
+def test_cavp_key_pairs() raises:
+    # NIST CAVP 186-3 KeyPair.rsp.
+    assert_equal(
+        _public_hex(
+            "5394f7973ea868c52bf3ff8d8ceeb4db90a683653b12485d5f627c3ce5abd8978fc9673d14a71d925747931662493c37"
+        ),
+        "04fd3c84e5689bed270e601b3d80f90d67a9ae451cce890f53e583229ad0e2ee645611fa9936dfa45306ec18066774aa24b83ca4126cfc4c4d1d18a4b6c21c7f699d5123dd9c24f66f833846eeb58296196b42ec06425db5b70a4b81b7fcf705a0",
+    )
+    assert_equal(
+        _public_hex(
+            "9b90d800abc37df43536e0dc321d43e6aeb5317fcb5118a0e827c8165b1cb05051ef12794b5278a293accbc0b1beb2c2"
+        ),
+        "04732b0f83d303475584d88ed91cc74b367e9ffbfcc2d044d1485417d2731fa4f3b70347388e2308e9e43bdbf952465393d8d232a2c995a6ff133893dcfa9b559c11376eb999abf55edd51cc5edb7935500f80f55ca1a542a1b87f6c8c643b83d6",
+    )
+    assert_equal(
+        _public_hex(
+            "9fdc866600017ee5be419ef11f13a537a403ed16743d16d43fba9938893fa9771c20b971faa4719744cb40af3b73bf84"
+        ),
+        "04315ec7497da462a6bc8fd16bbe9c84c7d96e8b9a49d6ce72936ef3a55d12c73e43f375a2d49015d8990eff598f3e46218b84927898f8c79e8e5a101329454fd15b6333475e90e14bca1668323f854b10a2e95aeae619b4f68801ba3db1840a36",
+    )
+    assert_equal(
+        _public_hex(
+            "dc6dc5ed9ee57eb5e39878f97aeac359f8258b9c381fb1987abb061184013220a76d667fcf3a53088eae8da3f8d9b520"
+        ),
+        "04285d0daaf8f6315a05fde9e6ec2f1d6ade8ab158abd4a40995f34a749421a2fbb0a642031e1be371b07931caa41bc5232920820f7eaebbd05ac5920d2ebd3561c12b635a1454476669a2d09b31fca66f883dacc2eb4ac078d203970d49a039f3",
+    )
+    assert_equal(
+        _public_hex(
+            "0f4144cf327d6feae06091d4a8c710011ce32c987af1451fccc471bc3f482bc741368e88d04324c93924dcb3b5274b02"
+        ),
+        "04b8880cd358dbc4d8743b6bae8cd1296235a78720bad3c8786fa5db6a632ea82320cc705386810fa9b49d1c9c8164ba1903f930af97df0862640f1b9116f3d253c39180a34e3cf18fd54178fcad835ba1c4eae2f02136748bc57cde57e4cedb99",
+    )
+
+
+def test_cavp_public_key_validation() raises:
+    # NIST CAVP 186-3 PKV.rsp. ECDH with the private key 1 returns the
+    # x-coordinate of a point that passes validation. Coordinates that
+    # do not fit in 48 bytes cannot be encoded and are left out.
+    var one = "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+    # F (2 - Point not on curve)
+    assert_equal(
+        _ecdh_hex(
+            one,
+            "04e87cc868cdf196471d3fc78c324be2c4a0de8dbde182afea88baa51666f3cc9993eae5f1d60d4aec58894f0357273c48187219b0adc398c835791798053cc6a0bcc6e43228ac23101ee93dfce0e508be988a55fa495eb93b832064dc035e7720",
+        ),
+        "error",
+    )
+    # P (0 )
+    assert_equal(
+        _ecdh_hex(
+            one,
+            "046e9c7e92ee23713fabb05d0b50e088eb534fd1e2b257c03304cfa33598f88a07c7e31a13e24707a7057ca2919323058ea218a485e22eae08c3618cfd73befcfcd13c3f196c08df99d7f79ebffe9f127b896aa0cb36cfdf2fc4818b8cd766f185",
+        ),
+        "6e9c7e92ee23713fabb05d0b50e088eb534fd1e2b257c03304cfa33598f88a07c7e31a13e24707a7057ca2919323058e",
+    )
+    # P (0 )
+    assert_equal(
+        _ecdh_hex(
+            one,
+            "04452eb75736ac00974f953a0ce6060c19911a3463b045cb15ad6c0fa5045d66b04252a9001e8c4a9a6a0293f127bd20d9a1da4fbf8f0726fb9e04cf3ed0404af6cafb028b924c1951165f0ffe7caf04c05444cc7defb8cb62381727b6c1589f13",
+        ),
+        "452eb75736ac00974f953a0ce6060c19911a3463b045cb15ad6c0fa5045d66b04252a9001e8c4a9a6a0293f127bd20d9",
+    )
+    # F (2 - Point not on curve)
+    assert_equal(
+        _ecdh_hex(
+            one,
+            "0425e5509a54f5fa62f94551dff3dfe210db1bb2bbc8fd4e672fbd5a211f9fd2f7eadc2b83fcd4198b7f857d9a2dc39c1198a4a13bc2f2d04bebd6d4e04412a9d306e57b90364583a6ec25bf6f0175bb5b397b8cfea83fd5d1e0ad052852b4aba7",
+        ),
+        "error",
+    )
+    # P (0 )
+    assert_equal(
+        _ecdh_hex(
+            one,
+            "04a953eafd9dae3862d1049dd99cf628745bfb8f1024aaa567c51e9da01eb9bda996a7b1c906b3bb44a94649df2bcef3042f66dda137d3a408e2498d532f652e668f09b86bc056ff699efcc71ed1f22967ca7a99c8bf64f246b93c1982f856ed27",
+        ),
+        "a953eafd9dae3862d1049dd99cf628745bfb8f1024aaa567c51e9da01eb9bda996a7b1c906b3bb44a94649df2bcef304",
+    )
+    # F (2 - Point not on curve)
+    assert_equal(
+        _ecdh_hex(
+            one,
+            "04a999b80932ea62b4689769225b3ff34b0709c4e32342a824799ca63dcce1f3ed8819e080fc7fa130c1881c8131f4bcb5b8c77d0868c2c159e1be6bcd60ec488ab31531c21e1cb8fe2493ed26ac848fde7d27823a9a4912650511a3d460e25ef2",
+        ),
+        "error",
+    )
+    # F (2 - Point not on curve)
+    assert_equal(
+        _ecdh_hex(
+            one,
+            "045cbaa8088b0804fe14c2a6fa54b1adee1690fd17a682ea9ec5202ba7575e217c37e98565b7e95e7c882bb6eef76a3df179d8c7e96ae7a7668496317c596b24ebe56e6ea5bc64b74c38867eb2c419d8277d20b9c27a2d5c75d1c7a47885d38d0e",
+        ),
+        "error",
+    )
+    # P (0 )
+    assert_equal(
+        _ecdh_hex(
+            one,
+            "0431951643c18400593f2d7cb32a3acf6071b4d95b8ab80a0535aa5edc9e01145f6dcc91a9977eb450eb077112edf887b2098a9e569684ca517bfdd5bc4b57876b210c3d7598e4f989e8f88f9f103b5d90d6baaa1a6617d524001c44a677bd13d0",
+        ),
+        "31951643c18400593f2d7cb32a3acf6071b4d95b8ab80a0535aa5edc9e01145f6dcc91a9977eb450eb077112edf887b2",
+    )
+
+
+def test_cavp_signature_verification() raises:
+    # NIST CAVP 186-3 SigVer.rsp, [P-384,SHA-384].
+    _check_message(
+        "SigVer 0: F (2 - R changed)",
+        "041f94eb6f439a3806f8054dd79124847d138d14d4f52bac93b042f2ee3cdb7dc9e09925c2a5fee70d4ce08c61e3b191601c4fd111f6e33303069421deb31e873126be35eeb436fe2034856a3ed1e897f26c846ee3233cd16240989a7990c19d8c",
+        "4132833a525aecc8a1a6dea9f4075f44feefce810c4668423b38580417f7bdca5b21061a45eaa3cbe2a7035ed189523af8002d65c2899e65735e4d93a16503c145059f365c32b3acc6270e29a09131299181c98b3c76769a18faf21f6b4a8f271e6bf908e238afe8002e27c63417bda758f846e1e3b8e62d7f05ebd98f1f9154",
+        "3c15c3cedf2a6fbff2f906e661f5932f2542f0ce68e2a8182e5ed3858f33bd3c5666f17ac39e52cb004b80a0d4ba73cd9de879083cbb0a97973c94f1963d84f581e4c6541b7d000f9850deb25154b23a37dd72267bdd72665cc7027f88164fab",
+        False,
+    )
+    _check_message(
+        "SigVer 1: P (0 )",
+        "04cb908b1fd516a57b8ee1e14383579b33cb154fece20c5035e2b3765195d1951d75bd78fb23e00fef37d7d064fd9af144cd99c46b5857401ddcff2cf7cf822121faf1cbad9a011bed8c551f6f59b2c360f79bfbe32adbcaa09583bdfdf7c374bb",
+        "9dd789ea25c04745d57a381f22de01fb0abd3c72dbdefd44e43213c189583eef85ba662044da3de2dd8670e6325154480155bbeebb702c75781ac32e13941860cb576fe37a05b757da5b5b418f6dd7c30b042e40f4395a342ae4dce05634c33625e2bc524345481f7e253d9551266823771b251705b4a85166022a37ac28f1bd",
+        "33f64fb65cd6a8918523f23aea0bbcf56bba1daca7aff817c8791dc92428d605ac629de2e847d43cee55ba9e4a0e83ba4428bb478a43ac73ecd6de51ddf7c28ff3c2441625a081714337dd44fea8011bae71959a10947b6ea33f77e128d3c6ae",
+        True,
+    )
+    _check_message(
+        "SigVer 2: F (3 - S changed)",
+        "049b3c48d924194146eca4172b6d7d618423682686f43e1dbc54ed909053d075ca53b68ae12f0f16a1633d5d9cb17011ec695039f837b68e59330ee95d11d5315a8fb5602a7b60c15142dbba6e93b5e4aba8ae4469eac39fa6436323eccc60dcb6",
+        "9c4479977ed377e75f5cc047edfa689ef232799513a2e70280e9b124b6c8d166e107f5494b406853aec4cff0f2ca00c6f89f0f4a2d4ab0267f44512dfff110d1b1b2e5e78832022c14ac06a493ab789e696f7f0f060877029c27157ce40f81258729caa4d9778bae489d3ab0259f673308ae1ec1b1948ad2845f863b36aedffb",
+        "202da4e4e9632bcb6bf0f6dafb7e348528d0b469d77e46b9f939e2fa946a608dd1f166bcbcde96cfad551701da69f6c2db595b49983882c48df8a396884cd98893a469c4d590e56c6a59b6150d9a0acdf142cf92151052644702ed857a5b7981",
+        False,
+    )
+    _check_message(
+        "SigVer 3: F (4 - Q changed)",
+        "045140108b93b52d9ad572d6129ed6564766f8df3755e49fa53eba41a5a0d6c1d24a483c90070583a66e3cfa52b6fb1f31ff52498446a40c61e60c97554256472625633eda0c1a8b4061481fecfbe9c4503e99dfc69e86c9e85c8cc53dca6b8dc4",
+        "21eb31f2b34e4dde8d6c701e976d3fbbf4de6a3384329118d4ddb49adb2bb44465598abf6df25858b450c7767e282ccaca494088274e37353674eef58f583937d3d184ef727317d3672397a74c8fe327919a3df8fd65af0bc8cebbc40095adf89f1bf2c5e6dc6ba44633fd8433b25f065f5e3eb4840af23cc534415406745a31",
+        "b2726b2ba9da02de35e9953fc283d1e78700860d4c33dce8db04dd41499d904866c1b8debb377f6c0dfcb0704252174f0775b027068d7ad55121a278a819f52099ace750d5e996eaec9dee7be72758736cf769650148fbd5c411beb9b88f979e",
+        False,
+    )
+    _check_message(
+        "SigVer 4: F (4 - Q changed)",
+        "0431f4fc2fac3a163a5796f5e414af6f8107ab5e4a98c755d81efa9d5a83c10128c16c863190112fc29d3d5f3057a2edf1fe208743f3e96c3a34b5fff78c9716c074a1ce3dc01c3f0e471ddfae91cd88e7dda38dd0e5e1f91b00b8539da3cc10bc",
+        "58ea3b1e82f97708053d0b41441d0aa9619050e86ac6c4f7781164e5da3019c47a839366509fa95812e4f64afdc62b627c7a98f633dd05db45c1d8954fc83bdb5042679378bb7e4c7863aacf2026360ca58314983e6c726cf02bb347706b844ddc66aee4177c309cb700769553480cdd6b1cd77341c9a81c05fbb80819bc623f",
+        "706911812ec9e7370234efd57b2855975eab81e9c2fe783aa8e442dc6e7d681dab2dc0dfc6765f87ab67001108e3facf42c89efa22d853d32f619c9fe13e9852889ac98a9fed5d4fa47fed238e1cbe70d7970af9f7bdf84e51176af4885f2490",
+        False,
+    )
+    _check_message(
+        "SigVer 5: F (4 - Q changed)",
+        "041f7911dcfe63a6f270cf75b8584d9b1b4a00afc1fa43543c945945b8a821ebeb37fbc705a000f9cc7c35f7d27027b7bbf11835ec80c4ac06d99247e73bf72522109ac255e6109262de4dfbf9619244f74fb6c9ee57694537d7e79c248db34dc4",
+        "188cd53097ef3e64b78b9260bf461708c836f25f2bcc98b534af98b96ee4b324e2203a7e62dbc396966f56419fb5135cb124369aaa025f396eac72f05ab45950d9e02cd5a2357eafab9f816117b7f1de192468895327802ec79f5d6b5a3d44d7afbed7b4a308e365655b8db2bde75e143062ee48b7c51688ac5db0bc7c83ec9c",
+        "3587c9c6885adf3be1086825f9a41ccd2edfa0bd95e7fc4dba5a9710f41d539132de7772f14c18e318f8992b66d2a86c73a844d729599d4e3e3c1b63e9c4bf5a73d1f69e0160857fe63a56c381c051f5c37ea6b4cc4caacb6ff26ef9699efe30",
+        False,
+    )
+    _check_message(
+        "SigVer 6: F (1 - Message changed)",
+        "042039661db813d494a9ecb2c4e0cdd7b54068aae8a5d0597009f67f4f36f32c8ee939abe03716e94970bba69f595fead6e2d5236e7e357744514e66a3fb111073336de929598eb79fb4368c5bf80814e7584a3b94118faac9321df37452a846fc",
+        "6462bc8c0181db7d596a35aa25d5d323dd3b2798054c2af6c22e841b1ccf3dc3ee514f86d4a0cef7a6f7f566ae448b24dcc8d11eb7a585d44923ea1a06c774a2b3eb7409ab17a0065d5834ab00309ad44312a7317259219543e80ddb0cc2a4381bf6e53cd1bb357eba82e11c59f82e446c4b79314119182c0de96a1b5bae0b08",
+        "164b8ac2b34c4c499b9d6727e130b5ef37c296bd22c306d1396c6aa54ca661f729aa6353b55d7cf1793b80b5a485115f4e7187f8f735b7272f2c0985315b5602bb9b1a09f32233aa10570c82d1ccedef6e725800336511e47f88ddbbbdc08f54",
+        False,
+    )
+    _check_message(
+        "SigVer 7: F (1 - Message changed)",
+        "0446dcf8ee848c6459fa66d1cae91ccd471401a5782cb2d3b9b9264189f0e9ddf7197b05c694931bde3306240cf9d24b7e79d9508f82c5ead05c3f9392f3b1458f6d6c02f44420b9021d656e59402e2645bf3ba1a6b244ddb12edbb69516d5873b",
+        "13c63a3cb61f15c659720658a77869145ae8a176c6d93d3a8aa9946236d9fb0463db9e48c667cba731afaa814ba0d58357524f8de28d4c4bbe2691dac9b32632a7dd0f99fd4cb240290878305011f7d3e37ecc410cc1fed601e7901e8be6414ea44317584843a2d2ca2e15103e1ea49365bc384355b3c6fa6ccdd452543e9769",
+        "5ffba3b5bd7c3a89ec40b47884b0b3464e8abb78608c6d61e1e62c2ca98d44fcdf61825d69dffee8408d0849d0623bac0d2597b5fc3842ffce1957172253a8c9c0e4dbe770ce54f70f139e0545dc34ec639d609e14175bdb2b812ccfda00c9d4",
+        False,
+    )
+    _check_message(
+        "SigVer 8: F (2 - R changed)",
+        "04097cea75f685cf4d54324ad2124ce3f77b1e490bbaa1ffacde40dd988f7591e1c5d158e6f232500d958762831914af7f716d8bc056daf69ca2edd21b89a6ae9923cfcae87bfda5f9a6e514dd4b9d28d164fcc613ca2afb9660adfece59f09b66",
+        "6939a9118adc307107aa6b0057c280d10fa44a64700c7bd23e1f33a478ad2cfe596c05f72b540cbdb696aac6ab98d9ca8c62f33e182657130b8317a76275a5996333a5d3547e2293b401d0adf60f91e91d2137e34f3336e017c3c6dba6bf5b13dd0de288f9b20a896a92c48e984fbc09f920fab82f3f915d6524b0c11236aca4",
+        "1c5d4561d2a3af8835839b543098c101c715c545eb7d00300c5cb05bb08dac29e732ffdc31c50915e691999ad505104cc3442f2fb1498fd47c2f959edff37a19783e3ccee80dc6955ca64db087fd188e67358e7b9223535bbb858d21ba6a978c",
+        False,
+    )
+    _check_message(
+        "SigVer 9: F (3 - S changed)",
+        "04d2e2b3d262bb1105d914c32c007ea23d15a98197f0ed90b46a17f3d403e406a76c8f752be1a8cd01a94fd45157f6511ae585fba180017b9983b4c853ad3a5dd52e079c5f0ef792d1a0213b6085e390b073de1a4b01749ceab27806e5604980fe",
+        "c82071e42c45ac3597f255ba27766afe366e31a553a4d2191360b88a2a349ee077291454bf7b323cb3c9d7fec5533e4e4bf4fb5bc2eb16c6319e9378a3d8a444b2d758123438dbb457b26b14b654b3c88d66838adfa673067c0552d1b8a3ade3a9cb777986c00f65cace53f852c1121acf19516a7cf0ba3820b5f51f31c539a2",
+        "49c001c47bbcee10c81c0cdfdb84c86e5b388510801e9c9dc7f81bf667e43f74b6a6769c4ac0a38863dc4f21c558f2861fb4ff67340cc44f212404ba60f39a2cb8dcd3f354c81b7219289d32e849d4915e9d2f91969ba71e3dd4414f1e8f18f7",
+        False,
+    )
+    _check_message(
+        "SigVer 10: F (2 - R changed)",
+        "04cd887c65c01a1f0880bf58611bf360a8435573bc6704bfb249f1192793f6d3283637cd50f3911e5134b0d6130a1db60ef2b3cbf4fe475fd15a7897561e5c898f10caa6d9d73fef10d4345917b527ce30caeaef138e21ac6d0a49ef2fef14bee6",
+        "137b215c0150ee95e8494b79173d7ae3c3e71efcc7c75ad92f75659ce1b2d7eb555aad8026277ae3709f46e896963964486946b9fe269df444a6ea289ec2285e7946db57ff18f722a583194a9644e863ae452d1457dc5db72ee20c486475f358dc575c621b5ab865c662e483258c7191b4cc218e1f9afeeb3e1cb978ce9657dc",
+        "addfa475b998f391144156c418561d323bdfd0c4f416a2f71a946712c349bb79ba1334c3de5b86c2567b8657fe4ca1f11c314b1339f73545ff457323470695e0474c4b6860b35d703784fbf66e9c665de6ca3acb60283df61413e0740906f19e",
+        False,
+    )
+    _check_message(
+        "SigVer 11: P (0 )",
+        "04a370cdbef95d1df5bf68ec487122514a107db87df3f8852068fd4694abcadb9b14302c72491a76a64442fc07bd99f02cd397c25dc1a5781573d039f2520cf329bf65120fdbe964b6b80101160e533d5570e62125b9f3276c49244b8d0f3e44ec",
+        "93e7e75cfaf3fa4e71df80f7f8c0ef6672a630d2dbeba1d61349acbaaa476f5f0e34dccbd85b9a815d908203313a22fe3e919504cb222d623ad95662ea4a90099742c048341fe3a7a51110d30ad3a48a777c6347ea8b71749316e0dd1902facb304a76324b71f3882e6e70319e13fc2bb9f3f5dbb9bd2cc7265f52dfc0a3bb91",
+        "c6c7bb516cc3f37a304328d136b2f44bb89d3dac78f1f5bcd36b412a8b4d879f6cdb75175292c696b58bfa9c91fe63916b711425e1b14f7224cd4b96717a84d65a60ec9951a30152ea1dd3b6ea66a0088d1fd3e9a1ef069804b7d969148c37a0",
+        True,
+    )
+    _check_message(
+        "SigVer 12: F (1 - Message changed)",
+        "04d1cf635ca04f09b58879d29012f2025479a002bda590020e6a238bccc764478131cac7e6980c67027d92ece947fea5a621f7675c2be60c0a5b7d6df2bcc89b56212a2849ec0210c59316200c59864fd86b9a19e1641d206fd8b29af7768b61d3",
+        "15493aa10cfb804b3d80703ca02af7e2cfdc671447d9a171b418ecf6ca48b450414a28e7a058a78ab0946186ad2fe297e1b7e20e40547c74f94887a00f27dde7f78a3c15eb1115d704972b35a27caf8f7cdcce02b96f8a72d77f36a20d3f829e915cd3bb81f9c2997787a73616ed5cb0e864231959e0b623f12a18f779599d65",
+        "6101d26e76690634b7294b6b162dcc1a5e6233813ba09edf8567fb57a8f707e024abe0eb3ce948675cd518bb3bfd43834e2a30f71c8f18b74184837f981a90485cd5943c7a184aba9ac787d179f170114a96ddbb8720860a213cc289ae340f1f",
+        False,
+    )
+    _check_message(
+        "SigVer 13: P (0 )",
+        "04d15ca4b2d944d5539658a19be8ef85874f0c363b870f1cd1f2dc9cb68b2a43a10d37064697c84543e60982ab62bb32c8062fb7dfc379fc6465302ac5d8d11d3b957b594c9ef445cfe856765dd59e6f10f11809e115ac64969baa23543f2e5661",
+        "bc5582967888a425fb757bd4965900f01e6695d1547ed967c1d4f67b1b1de365d203f407698761699fec5f5a614c21e36a9f57a8aaf852e95538f5615785534568811a9a9ccc349843f6c16dc90a4ac96a8f72c33d9589a860f4981d7b4ee7173d1db5d49c4361368504c9a6cbbaedc2c9bff2b12884379ba90433698ceb881d",
+        "e2cf123ce15ca4edad5f087778d483d9536e4a37d2d55599541c06f878e60354aa31df250b2fc4ed252b80219552c958696707a7e3f9a4b918e7c994e7332103d8e816bbe6d0d1cf72877318e087ed0e230b0d1269902f369acb432b9e97a389",
+        True,
+    )
+    _check_message(
+        "SigVer 14: F (3 - S changed)",
+        "04c83d30de9c4e18167cb41c990781b34b9fceb52793b4627e696796c5803515dbc4d142977d914bc04c153261cc5b537f42318e5c15d65c3f545189781619267d899250d80acc611fe7ed0943a0f5bfc9d4328ff7ccf675ae0aac069ccb4b4d6e",
+        "4f31331e20a3273da8fce6b03f2a86712ed5df41120a81e994d2b2f370e98ef35b847f3047d3cf57e88350e27b9ac3f02073ac1838db25b5ad477aee68930882304fc052f273821056df7500dc9eab037ed3ac3c75396e313bf0f4b89b26675af55f3378cf099d9d9a25a4887c1cfd2448f5b2188c41d6fa26045c5e974bf3e4",
+        "b567c37f7c84107ef72639e52065486c2e5bf4125b861d37ea3b44fc0b75bcd96dcea3e4dbb9e8f4f45923240b2b9e44d06266e0f27cfe4be1c6210734a8fa689a6cd1d63240cb19127961365e35890a5f1b464dcb4305f3e8295c6f842ef344",
+        False,
+    )
+
+
+def test_cavp_ecdh() raises:
+    # NIST CAVP KAS ECC validity test, static unified model, Z only.
+    # P (0 - Correct)
+    assert_equal(
+        _ecdh_hex(
+            "f865418473e5bf7d2e1bbcd9bd5a9270c003a9dd35e778133ca59fcab4bb64fe24d6800e7047bdd033abc8bfa8db35b5",
+            "04d1bf2ac21637d66d6398aac01dcd56ac6f065fb45d1f6f16747bab9e9b01b4630b59b20927aea147355bf41838acb4824c9e23f1c5a41647d094086bf4ed31708651f21d996c47780688ac10f77deee2e43b5241b6caecd2fd5444bc50472e0e",
+        ),
+        "a781430e6078a179df3f9ee27cd8fdc6188f161b6c4ccc4053ef6c6ca6fc222946883a53c06db08f0a020023ced055aa",
+    )
+    # P (0 - Correct)
+    assert_equal(
+        _ecdh_hex(
+            "c40c805488115e43279c99797bcbfff8d9922ea9aec471d9ba659590034c3fb739d23661c0aae6e7ada2a1de36eb63a1",
+            "044c619593e459e4aca7c572834064134d93e8b1b676388b0ff67b893722cf7e8396cd953df38a42e4131dbad29518b2afdbe261af918baade39070e88f62eabe4ee9d5f2563707271cc566dd7a2380aa4707d15d6eef142a52d75a67429afd0c6",
+        ),
+        "128934db846099c8d8caa788b0b84bb65bd57b20774ff7f8e7f29939297d72bbc232c5d2b2c8ef1d63e3d75d3908e778",
+    )
+    # P (0 - Correct)
+    assert_equal(
+        _ecdh_hex(
+            "3120ee90dcce02bac90a66d30ad602e94edcce482dbc5245a136df1d0509b04f6ee305fedd290775c71f1631684f5c0a",
+            "04d18832f4cf3013e514b4fb4c42bbeb15708e20ed91b982598deb2d67b37275587fcb35cf214039ec4fd1834d704c1faf917c49465bef063949957256eddbece762090ef10f8c48566bd71dc0ad9eb3bc00f0b3f6a88d614210804dd633ca6e68",
+        ),
+        "5c8d476518873208e1c97685c033a1ba6ec279b8674060cc1a99469908604353043bf488109150b9b2f9b3b1440a426c",
+    )
+    # P (0 - Correct)
+    assert_equal(
+        _ecdh_hex(
+            "b2fc137c3a902645d98887c3751238ed3ee7c1b618a625b7b422b846c171f58849d6c6d3208d59542dda155e565f8ad6",
+            "047a1a4e79c41b0e9e65d2904605e469bbb60cefdb6379118d69ded42018376c0feb52d6849dc3e3e739986723eb0bbad431f71408923de1bedab5309787545f679055f0757316a37f2d1a89b34601ed9361c3e399675e6fa47b050b23b4887fbb",
+        ),
+        "fa081956913833ffb80dc88c2c4aa1deb2e3b8820aad13830466664b79332896f0ee99addb94e10be6465b24ce488417",
+    )
+    # F (2 - CAVS's Static public key Y fails PKV 5.6.2.5)
+    assert_equal(
+        _ecdh_hex(
+            "3d715cd0d6490ba5607e7eae2c74361be65de413f10576c1d996658e20c78f8110c70104067922d48303f6ccb1b23f46",
+            "041f9af3b14439d4c56b353b5892dd85b6a27053e1d23f5f05ff95ea3fa942eb463e1074b01828a79c865b16fde0fc0f2401a81aaef502fe84508b054924d90078f68d8d4e9ae5299bd0ea60a97167c549011f4a024e964292d378e82b6874caad",
+        ),
+        "error",
+    )
+    # F (1 - CAVS's Static public key X fails PKV 5.6.2.5)
+    assert_equal(
+        _ecdh_hex(
+            "14c41069df1778309c40abcce9eba7976d07dfe15b097d54f0c92e7535c833490f0d8be45062ceba3dd8daece95cb0b1",
+            "04323ebdc28334056adcef383b40b3ab37b6ae655bbb75cdd2b2ba0f8a925946210ea026501396f7784a580a2b9ec94819f6437ad4b8c3e86c7366cab59997b7bca13b6abc145218bc45085667c7bb59175a5938278713de4dc3a24ce7d58d5eed",
+        ),
+        "error",
+    )
+    # P (13 - Z value should have leading 0 nibble )
+    assert_equal(
+        _ecdh_hex(
+            "0948cec31d190235eaca3c4ad989a09bf04d7dfe5e66949a4ee5a02b2c3eaec99df36139acc4b3a80bd0caed5e2b3681",
+            "04e88fdbe4b268b17e593df2e077d74a9668ab908a0621a1a62a390e3b69d68b847dfaeef8d34260821448569110125445ba176799d2f6e23f7b7c3e62b4c20829c09fd5a480624f25d7dd2bb77c5c27b46316cd07284fe03c1aafafd2aa272c82",
+        ),
+        "010e28f3e289051043dd6b0e5a62cd2d5743f3454d3084433e77b20c70496d3915bde417b1f6263d4bf2ed909f960693",
+    )
+    # F (1 - CAVS's Static public key X fails PKV 5.6.2.5)
+    assert_equal(
+        _ecdh_hex(
+            "b60b3cced8d45fa64460699de7a6f6f7814989b5e6149d4c3bfe5d9b2ed3f994eb8e9248a37cc056832a396f609fced2",
+            "04eb7add5156531e5b162b5bfd427176aee5cf426d7ff73b1791578c321d5f3db12ab5a5ea712c18bdc54ed727ca24f126dd0a326787ed4234b211c72ae29fd43833409d4ab78b2558507a772155339943d4d6e20451b322e9bd04a21053511590",
+        ),
+        "error",
+    )
+    # P (13 - Z value should have leading 0 nibble )
+    assert_equal(
+        _ecdh_hex(
+            "180030064e4ce14b6b747bd855c93d8f19b4cc7c0413324ae524e9c35d9bd0babb36d761cbce4219976dfc7b0507b484",
+            "046a01a4daabd904de6d7928065f5e0216d2f701586be3bc20e2234972c915a24674af42d486fd7a643b57b63e9b17636c8aed15e8174babda491619e56672153d26ace689981eb909cd9504f76fc8e4ff158cc5eea6411324b11a9d816a3a3198",
+        ),
+        "09ae635382ea54af14c3860ef4936dc50d93657061aa37c63b5b4e24d2dd7d30a29c94da251ba2827d9bd734661b44cd",
+    )
+    # F (2 - CAVS's Static public key Y fails PKV 5.6.2.5)
+    assert_equal(
+        _ecdh_hex(
+            "0843bea1ec5f66429877ff95d1ec46384848be7d0984c914a6b9ad5173d8f6dc5d3a4fb8fa3ae6d45a1c52d473699aef",
+            "043f9af4d99b886be6a451f8c3608e890ce54fc9fe02bf4d33d33bc2b8ec04d054f33dc14926839e5fb3294b1f5479402b0e5b5f9482786bc76c37f974b20cce39e904f946e30b4d4bf53187d94887f39b1d33f4c00e809eb00b957f21ea027dc7",
+        ),
+        "error",
+    )
+
+
+def test_wycheproof_ecdsa_valid() raises:
+    # Wycheproof ecdsa_secp384r1_sha384_p1363_test, one vector per kind
+    # of edge case.
+    _check_message(
+        "tcId 1: signature malleability",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "12b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d71840da9fc1d2f8f8900cf485d5413b8c2574ee3a8d4ca03995ca30240e09513805bf6209b58ac7aa9cff54eecd82b9f1",
+        True,
+    )
+    _check_message(
+        "tcId 60: Edge case for Shamir multiplication",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "3133323237",
+        "ac042e13ab83394692019170707bc21dd3d7b8d233d11b651757085bdd5767eabbb85322984f14437335de0cdf565684bd770d3ee4beadbabe7ca46e8c4702783435228d46e2dd360e322fe61c86926fa49c8116ec940f72ac8c30d9beb3e12f",
+        True,
+    )
+    _check_message(
+        "tcId 61: special case hash",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "31373530353531383135",
+        "d3298a0193c4316b34e3833ff764a82cff4ef57b5dd79ed6237b51ff76ceab13bf92131f41030515b7e012d2ba857830bfc7518d2ad20ed5f58f3be79720f1866f7a23b3bd1bf913d3916819d008497a071046311d3c2fd05fc284c964a39617",
+        True,
+    )
+    _check_message(
+        "tcId 147: k*G has a large x-coordinate",
+        "044bf4e52f958427ebb5915fb8c9595551b4d3a3fdab67badd9d6c3093f425ba43630df71f42f0eb7ceaa94d9f6448a85dd30331588249fd2fdc0b309ec7ed8481bc16f27800c13d7db700fc82e1b1c8545aa0c0d3b56e3bfe789fc18a916887c2",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000389cb27e0bc8d21fa7e5f24cb74f58851313e696333ad68bffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        True,
+    )
+    _check_message(
+        "tcId 149: r,s are large",
+        "043623bb296b88f626d0f92656bf016f115b721277ccb4930739bfbd81f9c1e734630e0685d32e154e0b4a5c62e43851f6768356b4a5764c128c7b1105e3d778a89d1e01da297ede1bc4312c2583e0bbddd21613583dd09ab895c63be479f94576",
+        "313233343030",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52972ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52971",
+        True,
+    )
+    _check_message(
+        "tcId 150: r and s^-1 have a large Hamming weight",
+        "04d516cb8ac8e4457b693d5192beeb6ce7d9a46bef48eecf3ea823286f101f98d130f5a26dc6fec23662eff07f14486fd58456932e74894b7f0e3bb0dfd362502b3765dd80a3177209fb221dc9b51aaf4470b245391405bef514176b13a267a720",
+        "313233343030",
+        "7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffdd1aee55fdc2a716ba2fabcb57020b72e539bf05c7902f98e105bf83d4cc10c2a159a3cf7e01d749d2205f4da6bd8fcf1",
+        True,
+    )
+    _check_message(
+        "tcId 152: small r and s",
+        "04554f2fd0b700a9f4568752b673d9c0d29dc96c10fe67e38c6d6d339bfafe05f970da8c3d2164e82031307a44bd32251171312b61b59113ff0bd3b8a9a4934df262aa8096f840e9d8bffa5d7491ded87b38c496f9b9e4f0ba1089f8d3ffc88a9f",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        True,
+    )
+    _check_message(
+        "tcId 166: small r and s^-1",
+        "040bb03fce3c01ebcf0873abd134a8682f5fb8dbffa22da674047e5c3e71e43de582ed6abb908c2e4faa5d96186278b6c1ba3b22123e68ccc56f17dd79ff15565706f71a0b6123c77af3cd88f0af024cc5259781516edcaf5fe990646e7b66999d",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100489122448912244891224489122448912244891224489122347ce79bc437f4d071aaa92c7d6c882ae8734dc18cb0d553",
+        True,
+    )
+    _check_message(
+        "tcId 167: smallish r and s^-1",
+        "0458f246090d5e49863bc0bf2d501ff72f551c5f1c5e679eb49064fd02e221a2707326ec2d140bcc817afaad5065761566497c823fd736882cbf78fb92b1a5589b67e8067497c710a4cbb39dee2c5431bc45cfb96c9f8454385c9f2b3ef2d3d31a",
+        "313233343030",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000002d9b4d347952cdce751512561b6f57c75342848a3ff98ccf9c3f0219b6b68d00449e6c971a85d2e2ce73554b59219d54d2083b46327351",
+        True,
+    )
+    _check_message(
+        "tcId 168: 100-bit r and small s^-1",
+        "04fc6984dd6830d1485fb2581a45a791d8dca2c727c73d3d44c89f0082c1868af5ca74b4ca4ae22802640a9ebfe8c7ae12998d63a5b5ad1b72b899f0b132e4952aaa19d41fdeea48b1ed6b8358dd1db207fd66e01453ad40f67b836adc802d5fe8",
+        "313233343030",
+        "00000000000000000000000000000000000000000000000000000000000000000000001033e67e37b32b445580bf4efb2ad52ad52ad52ad52ad52ad52ad52ad52ad52ad52ad52ad5215c51b320e460542f9cc38968ccdf4263684004eb79a452",
+        True,
+    )
+    _check_message(
+        "tcId 169: small r and 100 bit s^-1",
+        "041b8def5922303d647e8eb07e3bad92f924b79b769eef168e7541de1f4e0d28ae9733eb98cf8a1fb6dd52ca02c8c75b51c7aa4bf679d49d8114122074da8f6044a427371796a5654a6106162d5f686abb73ebd896ab08c7062687f12171fbe4a3",
+        "313233343030",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010077a172dfe37a2c53f0b92ab60f0a8f085f49dbfd930719d6f9e587ea68ae57cb49cd35a88cf8c6acec02f057a3807a5b",
+        True,
+    )
+    _check_message(
+        "tcId 170: 100-bit r and s^-1",
+        "041734a039a88a16c2ff4aa97d2399121f56f52ef01ed5e50887f736f65b6e51d6e8786abb4e063da5d1ba812dff998403ccd698e6c296d5cd69178f8a82481a865da331627f1c4b324fbc02b36e8b5ed58a31f728e904d203a388755302195765",
+        "313233343030",
+        "0000000000000000000000000000000000000000000000000000000000000000000000062522bbd3ecbe7c39e93e7c2477a172dfe37a2c53f0b92ab60f0a8f085f49dbfd930719d6f9e587ea68ae57cb49cd35a88cf8c6acec02f057a3807a5b",
+        True,
+    )
+    _check_message(
+        "tcId 171: r and s^-1 are close to n",
+        "0452ca47dda99172cb8321495acf988548295988ec973c1b4ea9462c53e5768a704a936410ee847b5dbf1e9d0c131da6c787a47027e6655792eb002d4228ee72f7c814c9a0cecbff267948f81c9903ac10eb35f6cb86369224ed609811cdf390f4",
+        "313233343030",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc528f355555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326",
+        True,
+    )
+    _check_message(
+        "tcId 172: r and s are 64-bit integer",
+        "0491aa326dabe04a6ad266de30873518f978f634c740705152539787b5b42dd9683c4185ace936684683b4c136b5f2ff20cacda42b735cbee78e7b6a43f50b851b85e998c365909f763d3e64210eded159ebf21818dec0e207b877b99ff595beaf",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000009c44febf31c3594d00000000000000000000000000000000000000000000000000000000000000000000000000000000839ed28247c2b06b",
+        True,
+    )
+    _check_message(
+        "tcId 174: r and s are 100-bit integer",
+        "04b1f52ae15400a0e0a4b39aae9a11e675cfc918d0c672189a86f68c0f306b115b6b470b931d19b2bbfcddada74f30a72c43cdc9522c0f73082251b4293982bc3e90960384f957f594d0ebe6eefe72af1ce7387f46ca5824ba0515559c05444f59",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000009df8b682430beef6f5fd7c7d000000000000000000000000000000000000000000000000000000000000000000000000fd0a62e13778f4222a0d61c8a",
+        True,
+    )
+    _check_message(
+        "tcId 176: r and s are 128-bit integer",
+        "044314072bfccfe420f64cf79393bf38c773c4390f7df826c6a59043b3e0d55e8e69d37678c72a5e68a114e04ae5a2de765a4b87638874c3b3ff687ba7fcd08238d46385e2aa6d65e2e53a6d5e205fcfd9b744f4087c6292b665dcb691ca5e86d4",
+        "313233343030",
+        "00000000000000000000000000000000000000000000000000000000000000008a598e563a89f526c32ebec8de26367a000000000000000000000000000000000000000000000000000000000000000084f633e2042630e99dd0f1e16f7a04bf",
+        True,
+    )
+    _check_message(
+        "tcId 178: r and s are 160-bit integer",
+        "04eb99d6bf52d08c1118ce27b0e4c09ce0d6893d5a9da2757b7f03057fcc17bd8afb4c48a60e757ff61d5e54e31d6536a9059ec79354b3949d53461e6adf7671ddf20402e1c9337464775ee56d507832728124c514e1dca506fe5fa72f7e1778ff",
+        "313233343030",
+        "00000000000000000000000000000000000000000000000000000000aa6eeb5823f7fa31b466bb473797f0d0314c0be000000000000000000000000000000000000000000000000000000000e2977c479e6d25703cebbc6bd561938cc9d1bfb9",
+        True,
+    )
+    _check_message(
+        "tcId 180: s == 1",
+        "04bd3d91f003e18adbea73079d4eba23b91fc17fcec14c9eb15a193fbc9ca39c8c747cd7a2c9623e05dd587ccbb8ab4c443adb0a0706aa5ea7a68042082fccefc979612a7a1a3d694b00793b03f89bff866a8b97c8e77990c29360ce795036c764",
+        "313233343030",
+        "55555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        True,
+    )
+    _check_message(
+        "tcId 182: edge case modular inverse",
+        "045abbf618a084f67138c418a896d61af3af1826040835b73e7619846b495eba6f7eeaa2e9cc61c85f6100fedc25c16743b065a427bc503139529e4faa63dda553aed2696fd02c2b6ceb2d941d2c4363cf9ac7a6759d50e8b9d07fe286f17cef5c",
+        "313233343030",
+        "55555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326427f8227a67d9422557647d27945a90ae1d2ec2931f90113cd5b407099e3d8f5a889d62069e64c0e1c4efe29690b0992",
+        True,
+    )
+    _check_message(
+        "tcId 198: edge case for signature malleability",
+        "04370d9e2e31c712c8028092f802319d7fdf5b3319a8518d08bed3891508c7060cfe2236e18fa14fe077093ceae633e5430fd79aacf9d16ecc19b12d60fba4998dfc682702ec7c8bdd4a590035773b8c9c570ac7dcd414e03252f7a0e6f53b5863",
+        "313233343030",
+        "7fffffffffffffffffffffffffffffffffffffffffffffffe3b1a6c0fa1b96efac0d06d9245853bd76760cb5666294b97fffffffffffffffffffffffffffffffffffffffffffffffe3b1a6c0fa1b96efac0d06d9245853bd76760cb5666294b9",
+        True,
+    )
+    _check_message(
+        "tcId 200: u1 == 1",
+        "043ecfd58a3ce583866e0471d16eb3c10a411ec3b8671f3a04769b1ed8464a71cf1c76d8d9b7e3670bbe712d6f554a9383d980d8bedf57470d6b45cc1ad0c6426dc70a0e4be901106a36663bfcab04fcb86008777b92445120d5e3641d97396362",
+        "313233343030",
+        "55555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326f9b127f0d81ebcd17b7ba0ea131c660d340b05ce557c82160e0f793de07d38179023942871acb7002dfafdfffc8deace",
+        True,
+    )
+    _check_message(
+        "tcId 201: u1 == n - 1",
+        "044150ccd0fa45aa2ef6b5042ddbb1b87c5ffd1115a8fe5995641948acda82a7b190762d84352cd74d1ca01e79f68f9cb4eb11be9d494c181c156e23e77e532bdf0a20c3cc74ba8c29b1f3eb2bd99129ee0d70ff0d593f0d7a6d6887e7c55930d2",
+        "313233343030",
+        "55555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326064ed80f27e1432e84845f15ece399f2cbf4fa31aa837de9b953d44413b9f5c7c7f67989d703f07abef11b6ad0373ea5",
+        True,
+    )
+    _check_message(
+        "tcId 202: u2 == 1",
+        "04e78fe2c11beac7090ee0af7fed469a8ccebd3cccc4ee9fccc8ef3fc0455b69aaa082dc13e1d84f34026cb6f0af9e992ff34ebba71bf3a4050bf28e4084b5c5f5d4098ec46f10a31b02fb4bf20cc9362f6f02a66e802f817507535fac3ec0b099",
+        "313233343030",
+        "55555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec632655555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326",
+        True,
+    )
+    _check_message(
+        "tcId 203: u2 == n - 1",
+        "04ee24ab8a34d05af684939357f32759cc5a14f3c717529a20aea8e0c5965d8a41e68925f688471994b72021ba51b28c090a55693c92ad0cbae9edcf515e2b4c060b888d82c81e4a3b6a173b62ed04a46fa95db1a2f3949980fba2e371263c4fa9",
+        "313233343030",
+        "55555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa84ecde56a2cf73ea3abc092185cb1a51f34810f1ddd8c64d",
+        True,
+    )
+    _check_message(
+        "tcId 204: edge case for u1",
+        "043d2e916055c92e1b36133f5937b37c1b0102834eb77008a3ba9c3da446e9065971d68ba913091851e10cff5b4cd875c139aa7aadfc2caf7107b17ae1aea8b299d61bf15aca0cb3fd6f1ffde8192bfe58f0822bbbc1f55bddf6b4fe9c8f2b0eac",
+        "313233343030",
+        "7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd533b0d50480a3ef07e7e8af8b1097759bc03ac9a1c7ed6075a052869f57f12b285613162d08ee7aab9fe54aaa984a39a",
+        True,
+    )
+    _check_message(
+        "tcId 216: edge case for u2",
+        "04f877bd6e2a9273e322a3298ea3add13d1104b32172283669ca6688f0cb591524a7f15dd41496681eda98939aae729fede85ca37c81ef19e3dc9ab16908a3720d86875a51a6a6d932e37492a6ec7a344eabc482377f14891fbd1da7faeffa1178",
+        "313233343030",
+        "7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd7fffffffffffffffffffffffffffffffffffffffffffffffed2119d5fc12649fc808af3b6d9037d3a44eb32399970dd0",
+        True,
+    )
+    _check_message(
+        "tcId 228: point duplication during verification",
+        "04e585a067d6dff37ae7f17f81583119b61291597345f107acffe237a08f4886d4fdf94fe63182e6143c99be25a7b7d86b572c1e06dd2c7b94b873f0578fcb2b99d60e246e51245d0804edd44b32f0f000c8f8f88f1d4a65fea51dbbb4ab1e2823",
+        "313233343030",
+        "b37699e0d518a4d370dbdaaaea3788850fa03f8186d1f78fdfbae6540aa670b31c8ada0fff3e737bd69520560fe0ce6064adb4d51a93f96bed4665de2d4e1169cc95819ec6e9333edfd5c07ca134ceef7c95957b719ae349fc439eaa49fbbe34",
+        True,
+    )
+    _check_message(
+        "tcId 233: extreme value for k and edgecase s",
+        "046761044a040a4979db269b4a377e42f11b4be0ce24611f677674dcf770f5887ca4db565303283809e6d65f7fc6bc273605c7daa403fca53549f75ff3372909642d02b7fdcac1e68242814d6e925ab01a80836cfbb35581960079e2fb44c0d186",
+        "313233343030",
+        "08d999057ba3d2d969260045c55b97f089025959a6f434d651d207d19fb96e9e4fe0e86ebe0e64f85b96a9c75295df6155555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326",
+        True,
+    )
+    _check_message(
+        "tcId 234: extreme value for k and s^-1",
+        "046922c591502f01046fee5617bf16496f58398822e69afa8335308f36c09a8ed437209fefcffbbdf0a4876b35a3c7ab2655854db825b94b3f27e5f892d3bbb6c7240ec922894dd3598e91fcc6134a2b8fd154e1790466906206f0f623416e63a1",
+        "313233343030",
+        "08d999057ba3d2d969260045c55b97f089025959a6f434d651d207d19fb96e9e4fe0e86ebe0e64f85b96a9c75295df612492492492492492492492492492492492492492492492491c7be680477598d6c3716fabc13dcec86afd2833d41c2a7e",
+        True,
+    )
+    _check_message(
+        "tcId 238: extreme value for k",
+        "040fd1aab89f47b565b8160dfcc433b6408adeb1473c036b26b7ddec714fb4d0e7dd756c88469e86e218813ead8e8e7676f1cc955c4139e0071c0079ec1d77164e0569bdf453837e8b33c98535a0e7c9c61ef24762067bb46b6116ea7909a69b23",
+        "313233343030",
+        "08d999057ba3d2d969260045c55b97f089025959a6f434d651d207d19fb96e9e4fe0e86ebe0e64f85b96a9c75295df610eb10e5ab95f2f26a40700b1300fb8c3e754d5c453d9384ecce1daa38135a48a0a96c24efc2a76d00bde1d7aeedf7f6a",
+        True,
+    )
+    _check_message(
+        "tcId 249: pseudorandom signature",
+        "0429bdb76d5fa741bfd70233cb3a66cc7d44beb3b0663d92a8136650478bcefb61ef182e155a54345a5e8e5e88f064e5bc9a525ab7f764dad3dae1468c2b419f3b62b9ba917d5e8c4fb1ec47404a3fc76474b2713081be9db4c00e043ada9fc4a3",
+        "",
+        "32401249714e9091f05a5e109d5c1216fdc05e98614261aa0dbd9e9cd4415dee29238afbd3b103c1e40ee5c9144aee0f4326756fb2c4fd726360dd6479b5849478c7a9d054a833a58c1631c33b63c3441336ddf2c7fe0ed129aae6d4ddfeb753",
+        True,
+    )
+    _check_message(
+        "tcId 253: x-coordinate of the public key is large",
+        "04ffffffffaa63f1a239ac70197c6ebfcea5756dc012123f82c51fa874d66028be00e976a1080606737cc75c40bdfe4aacacbd85389088a62a6398384c22b52d492f23f46e4a27a4724ad55551da5c483438095a247cb0c3378f1f52c3425ff9f1",
+        "4d657373616765",
+        "07648b6660d01ba2520a09d298adf3b1a02c32744bd2877208f5a4162f6c984373139d800a4cdc1ffea15bce4871a0ed99fd367012cb9e02cde2749455e0d495c52818f3c14f6e6aad105b0925e2a7290ac4a06d9fadf4b15b578556fe332a5f",
+        True,
+    )
+    _check_message(
+        "tcId 256: y-coordinate of the public key has many trailing 0's",
+        "04d1827fc6f6f12f21992c5a409a0653b121d2ef02b2b0ab01a9161ce956280740b1e356b255701b0a6ddc9ec2ca8a9422c6ed5d2ced8d8ab7560fa5bb88c738e74541883d8a2b1c0e2ba7e36d030fc4d9bfb8b22f24db897ebac49dd400000000",
+        "4d657373616765",
+        "3244768016457c463b74f2097f216d9670b191f76281c74bc6a1a1971d19f209bf4696468f5eb75d6326a0a43c0a6529501e0ad985ed9f95697bd17fdbe3f9ca92e0f76426d3664e6896648d9c750bf588d0ce7d011c1a1e8d6c2e082422dc93",
+        True,
+    )
+    _check_message(
+        "tcId 259: x-coordinate of the public key has many trailing 0's",
+        "041099bb45100f55f5a85cca3de2b3bd5e250f4f6fad6631a3156c2e52a33d7d615dd279f79f8b4baff7c713ac00000000e6c9b736a8929f2ed7be0c753a54cbb48b8469e0411eaf93a4a82459ba0b681bba8f5fb383b4906d4901a3303e2f1557",
+        "4d657373616765",
+        "d4a8f3b0b4d3a5769e3a0bbc644b35f1d509355ed1fe401e170f667b661f693b32598e8c143a817a958982845042bb4804cc07578bbd1981dbf6e8a97a354c98d41b8b6f6e8a2c2b1763c7c2a29d79e24f8476075c9aed9aec6c64dff50461ae",
+        True,
+    )
+    _check_message(
+        "tcId 265: y-coordinate of the public key is small",
+        "04fb01baad5f0b8f79b9cd104d12aab9310146add7d6b4c022d87ae6711178b94d618ca7b3af13854b1c588879e877b33600000000208b3f5ad3b3937acc9d606cc5ececab4a701f75ed42957ea4d7858d33f5c26c6ae20a9cccda56996700d6b4",
+        "4d657373616765",
+        "d200958d491fcebde667cd736c9dba0961c70db2ecaf573c31dd7fa41ecca32b40b5896f9a0ddf272110e3d21e84593ac2ecf73943b9adce596bac14fce62495ae93825c5ff6f61c247d1d8afcba52082fc96f63a26e55bccfc3779f88cfd799",
+        True,
+    )
+    _check_message(
+        "tcId 271: r = 2, x = 2 is valid",
+        "04016d2db67561bc126ad6c344d6eeb2713a9e2892c649af0f015c6b7617f160c8a3b3a88add669d7155025073c5ac5b4f43bf2ed0088af08645c80aa0a24a567a94ba2d794e9689d3ad4b185bc5d2dd008333e2dd2ebb5069a9b32251a3cac71e",
+        "68656c6c6f2c20776f726c64",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        True,
+    )
+    _check_message(
+        (
+            "tcId 275: r = 2, x = n + 2 is the smallest possible x with a"
+            " reduction"
+        ),
+        "0401b54a697305092bac2939fb906d7471b411c4eba8654169166a5da3810e1fc96795df921f7abbf519be4a027435176ca19012a3518773d508106d4153adee43c3c384fa62ce36a4addea08f593ec9c76b09a6b9c69d29bd7d47eb48e167dd2f",
+        "68656c6c6f2c20776f726c64",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        True,
+    )
+    _check_message(
+        "tcId 279: s = 2^128",
+        "040a2fc2edd21336babc59da04aa566dc9b6b068162f7970e311136883b61be8f894da03cc8e93a64803d4f4f83a19c1b973076220bf4d40aa9a41cacbafbd32d1f0bd183c327153cd6601bfa81d5e2ec21c0ecc517e004dd3fbedeca7f975a9ed",
+        "68656c6c6f2c20776f726c64",
+        "4fd5dd99138e6f1002d2d23591b2f94071a7f5ad49ddb970dc859275bfe51f193470d443e793196901e88bbe749614d7000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000",
+        True,
+    )
+    _check_message(
+        "tcId 280: s = n - 2^128",
+        "040a2fc2edd21336babc59da04aa566dc9b6b068162f7970e311136883b61be8f894da03cc8e93a64803d4f4f83a19c1b973076220bf4d40aa9a41cacbafbd32d1f0bd183c327153cd6601bfa81d5e2ec21c0ecc517e004dd3fbedeca7f975a9ed",
+        "68656c6c6f2c20776f726c64",
+        "4fd5dd99138e6f1002d2d23591b2f94071a7f5ad49ddb970dc859275bfe51f193470d443e793196901e88bbe749614d7ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372dde581a0db248b0a77aecec196accc52973",
+        True,
+    )
+
+
+def test_wycheproof_ecdsa_invalid() raises:
+    # Wycheproof ecdsa_secp384r1_sha384_p1363_test, one vector per kind
+    # of edge case.
+    _check_message(
+        "tcId 2: replaced r by r + n",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "0112b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19a25617aad7485e6312a8589714f647acf7a94cffbe8a724a00e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 3: replaced r by r + 256 * n",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "010012b30abef6b5476fe6b612ae557c0425661e26b44b1bfde13e404c1d1a3f0fdbd49bfd2d7ced1b1ef6d69e61b6eebbd70000e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 4: replaced r by n - r",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "ed4cf541094ab8901949ed51aa83fbda99e1d94bb4e401e5ec7083591125fd5b9d8bc2cd7c6b0748e22ee5d5daffe09ce7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 5: replaced r by r + 2**384",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "0112b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d700e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 6: replaced r by r + 2**448",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "01000000000000000012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7000000000000000000e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 7: replaced s by s + n",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "01e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc5f8fc6adfda650a86aa74b95adbd6874b3cd8dde6cc0798f500e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 8: replaced s by s + 256 * n",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "0100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35f8d94e69f521d5bbbff6c685df143cd5abd3c062f48c46be2820000e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 9: replaced s by s + 2**384",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "01e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f8200e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 10: replaced s by s + 2**448",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "010000000000000000e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82000000000000000000e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_message(
+        "tcId 11: Signature with special case values r=0 and s=0",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        False,
+    )
+    _check_message(
+        "tcId 12: Signature with special case values r=0 and s=1",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        False,
+    )
+    _check_message(
+        "tcId 18: Signature with special case values r=1 and s=0",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        False,
+    )
+    _check_message(
+        "tcId 20: Signature with special case values r=1 and s=n",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973",
+        False,
+    )
+    _check_message(
+        "tcId 23: Signature with special case values r=1 and s=p",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff",
+        False,
+    )
+    _check_message(
+        "tcId 26: Signature with special case values r=n and s=1",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        False,
+    )
+    _check_message(
+        "tcId 34: Signature with special case values r=n - 1 and s=n",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52972ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973",
+        False,
+    )
+    _check_message(
+        "tcId 43: Signature with special case values r=n + 1 and s=n + 1",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52974ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52974",
+        False,
+    )
+    _check_message(
+        "tcId 47: Signature with special case values r=p and s=1",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        False,
+    )
+    _check_message(
+        "tcId 59: Signature with special case values r=p + 1 and s=p + 1",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff000000000000000100000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff000000000000000100000000",
+        False,
+    )
+    _check_message(
+        "tcId 148: r too large",
+        "044bf4e52f958427ebb5915fb8c9595551b4d3a3fdab67badd9d6c3093f425ba43630df71f42f0eb7ceaa94d9f6448a85dd30331588249fd2fdc0b309ec7ed8481bc16f27800c13d7db700fc82e1b1c8545aa0c0d3b56e3bfe789fc18a916887c2",
+        "313233343030",
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffeffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        False,
+    )
+    _check_message(
+        "tcId 153: incorrect size of signature",
+        "04554f2fd0b700a9f4568752b673d9c0d29dc96c10fe67e38c6d6d339bfafe05f970da8c3d2164e82031307a44bd32251171312b61b59113ff0bd3b8a9a4934df262aa8096f840e9d8bffa5d7491ded87b38c496f9b9e4f0ba1089f8d3ffc88a9f",
+        "313233343030",
+        "0201",
+        False,
+    )
+    _check_message(
+        "tcId 164: r is larger than n",
+        "041301dee63fca91b6de8835480c3d86297b1e6a0a7339fc5011a50c33f350e9938743df496aeaa1e3170ba1e2f0c449187b6812948761816232e414e23b0f9904d171da5cc0492a341e2b4f9477da0a311cdac7c7d01037ed7dddb3376892fd44",
+        "313233343030",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52976000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004",
+        False,
+    )
+    _check_message(
+        "tcId 165: s is larger than n",
+        "04cce27e78386d68492fc58dd5f191a690c2ebc0a452442fe0dd331f458f18c8fcd922e148f8f251bf1b85e149ccb3f19295395c884ff97f670631e84b7e0b0dab503ba9c7080eda0e1c66b04e160728067cfe88fbcbbb0f52cfb733cd951fcf26",
+        "313233343030",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accd7fffa",
+        False,
+    )
+    _check_message(
+        "tcId 181: s == 0",
+        "04bd3d91f003e18adbea73079d4eba23b91fc17fcec14c9eb15a193fbc9ca39c8c747cd7a2c9623e05dd587ccbb8ab4c443adb0a0706aa5ea7a68042082fccefc979612a7a1a3d694b00793b03f89bff866a8b97c8e77990c29360ce795036c764",
+        "313233343030",
+        "55555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        False,
+    )
+    _check_message(
+        "tcId 197: point at infinity during verify",
+        "04f896353cc3a8afdd543ec3aef062ca97bc32ed1724ea38b940b8c0ea0e23b34187afbe70daf8dbaa5b511557e5d2bddac4bd265da67ceeafca636f6f4c0472f22a9d02e2289184f73bbb700ae8fc921eff4920f290bfcb49fbb232cc13a21028",
+        "313233343030",
+        "7fffffffffffffffffffffffffffffffffffffffffffffffe3b1a6c0fa1b96efac0d06d9245853bd76760cb5666294b955555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326",
+        False,
+    )
+    _check_message(
+        "tcId 229: duplication bug",
+        "04e585a067d6dff37ae7f17f81583119b61291597345f107acffe237a08f4886d4fdf94fe63182e6143c99be25a7b7d86ba8d3e1f922d3846b478c0fa87034d46629f1db91aedba2f7fb122bb4cd0f0ffe3707076fe2b59a015ae2444c54e1d7dc",
+        "313233343030",
+        "b37699e0d518a4d370dbdaaaea3788850fa03f8186d1f78fdfbae6540aa670b31c8ada0fff3e737bd69520560fe0ce6064adb4d51a93f96bed4665de2d4e1169cc95819ec6e9333edfd5c07ca134ceef7c95957b719ae349fc439eaa49fbbe34",
+        False,
+    )
+    _check_message(
+        "tcId 230: point with x-coordinate 0",
+        "04b4d78cccbced8065c0ebdc330b4670ec99309273e442b9be341196c1043e4441fc57b914085595bfc755c64fc409f0ba01fee31cbbbaed5c1323f09c87df9b0712c12e99733fa23ef91b4e6ca666b09dd7540ebf1068a15155bc069e3d595c8c",
+        "313233343030",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000155555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec6326",
+        False,
+    )
+    _check_message(
+        "tcId 232: comparison with point at infinity",
+        "04b101cdb3eba20e112adbb4bbd2cb479a69e590a44ea902631832abfab8af2c3041b3df7f1665b2c6eb533f546217100a1a61aa9951578ad4f00ae17339a8a6f1359bbd0ac355678ed4df21338f08763c1d3702ec132b634c7bcc0118efb1d0dd",
+        "313233343030",
+        "55555555555555555555555555555555555555555555555542766f2b5167b9f51d5e0490c2e58d28f9a40878eeec632633333333333333333333333333333333333333333333333327e0a919fda4a2c644d202bd41bcee4bc8fc05155c276eb0",
+        False,
+    )
+    _check_message(
+        "tcId 245: public key shares x-coordinate with generator",
+        "04aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab73617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f",
+        "313233343030",
+        "f9b127f0d81ebcd17b7ba0ea131c660d340b05ce557c82160e0f793de07d38179023942871acb7002dfafdfffc8deace2492492492492492492492492492492492492492492492491c7be680477598d6c3716fabc13dcec86afd2833d41c2a7e",
+        False,
+    )
+    _check_message(
+        "tcId 272: r = 3, x = 2 is invalid",
+        "043354c45736316411d883a2b6fd4db06eba3f265a91b785483a7ae20762fa3c4c079d07ade93074c25bebe755ba359907acba758be8e3c4e0c2e7b81d31296dc4bb0ce13d3eeac936b016260912c6dc0e98c95b2455bf9f9633d80c5430054663",
+        "68656c6c6f2c20776f726c64",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        False,
+    )
+    _check_message(
+        "tcId 273: r = 2 + n, x = 2 is invalid; r was not reduced mod n",
+        "04016d2db67561bc126ad6c344d6eeb2713a9e2892c649af0f015c6b7617f160c8a3b3a88add669d7155025073c5ac5b4f43bf2ed0088af08645c80aa0a24a567a94ba2d794e9689d3ad4b185bc5d2dd008333e2dd2ebb5069a9b32251a3cac71e",
+        "68656c6c6f2c20776f726c64",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52975ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        False,
+    )
+    _check_message(
+        "tcId 274: r = n - 2, x = n - 1 is invalid",
+        "041ffc8be6cf440e2649263c7b0c535b5828effcd7403d1e3c0460b5d06e179eb09f4672c299ef0839719f01e3212522136df29eae630caabbfd328c538de8989e651a6192ba52a7117dccb23d822ccc3e1875a39d8c9621676fc67c952ac6e304",
+        "68656c6c6f2c20776f726c64",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52971ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        False,
+    )
+    _check_message(
+        "tcId 276: r = 3, x = n + 2 is invalid",
+        "043c8ea2db06ef48ecd59f8c0e1accb1d0c40b9f5ff4e5af3d326c9c8cb74bc941b8fa489468a607bb04b9817ce039d6099629deac1964857b6d7268fb3ff50330a6dafc2510f557053bf42f11c61cf85ececc95cfa754725a05f5a8184920056a",
+        "68656c6c6f2c20776f726c64",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        False,
+    )
+    _check_message(
+        (
+            "tcId 277: r = p - n + 2, x = 2 is invalid; r is too large to"
+            " compare r + n with x"
+        ),
+        "044e5e4f1a6e97059a6cf2f4e8129e5c7c64cb84f9994a41ff5bf30b29c1bf5ba6898627c91a23c73e05cd1a43c8f908c006a0aed7f1e63a728f87dbd5360a67571a076ab0b4cde81b10d499959814ddb3a8c7854b0bbfa87cc272f90bca2a2254",
+        "68656c6c6f2c20776f726c64",
+        "000000000000000000000000000000000000000000000000389cb27e0bc8d21fa7e5f24cb74f58851313e696333ad68effffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        False,
+    )
+    _check_message(
+        (
+            "tcId 278: r = 2^384 - n + 2, x = 2 is invalid; r + n is too large"
+            " to compare r + n with x, and overflows 2^384 bits"
+        ),
+        "04a7d0faaa124302cddcc1f46addca5a4cac48e02387ed0c51c46641a58999f16278255343522467f104bb296670458f817896fa77fb2eb80058b4d86b94a633bc82184843c9b163155e3071c4e1c876f6de2c91444393b22019e4f83a8d34b0d2",
+        "68656c6c6f2c20776f726c64",
+        "000000000000000000000000000000000000000000000000389cb27e0bc8d220a7e5f24db74f58851313e695333ad68fffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970",
+        False,
+    )
+
+
+def test_wycheproof_ecdsa_der() raises:
+    # Wycheproof ecdsa_secp384r1_sha384_test: DER-encoded signatures.
+    _check_der_message(
+        "tcId 1: pseudorandom signature",
+        "0429bdb76d5fa741bfd70233cb3a66cc7d44beb3b0663d92a8136650478bcefb61ef182e155a54345a5e8e5e88f064e5bc9a525ab7f764dad3dae1468c2b419f3b62b9ba917d5e8c4fb1ec47404a3fc76474b2713081be9db4c00e043ada9fc4a3",
+        "",
+        "3064023032401249714e9091f05a5e109d5c1216fdc05e98614261aa0dbd9e9cd4415dee29238afbd3b103c1e40ee5c9144aee0f02304326756fb2c4fd726360dd6479b5849478c7a9d054a833a58c1631c33b63c3441336ddf2c7fe0ed129aae6d4ddfeb753",
+        True,
+    )
+    _check_der_message(
+        "tcId 2: pseudorandom signature",
+        "0429bdb76d5fa741bfd70233cb3a66cc7d44beb3b0663d92a8136650478bcefb61ef182e155a54345a5e8e5e88f064e5bc9a525ab7f764dad3dae1468c2b419f3b62b9ba917d5e8c4fb1ec47404a3fc76474b2713081be9db4c00e043ada9fc4a3",
+        "4d7367",
+        "3066023100d7143a836608b25599a7f28dec6635494c2992ad1e2bbeecb7ef601a9c01746e710ce0d9c48accb38a79ede5b9638f3402310080f9e165e8c61035bf8aa7b5533960e46dd0e211c904a064edb6de41f797c0eae4e327612ee3f816f4157272bb4fabc9",
+        True,
+    )
+    _check_der_message(
+        "tcId 6: Legacy: ASN encoding of s misses leading 0",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3064023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d70230e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 8: length of sequence [r, s] uses long form encoding",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "308165023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 9: length of sequence [r, s] contains a leading 0",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "30820065023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 10: length of sequence [r, s] uses 102 instead of 101",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3066023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 11: length of sequence [r, s] uses 100 instead of 101",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3064023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 12: uint32 overflow in length of sequence [r, s]",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "30850100000065023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 13: uint64 overflow in length of sequence [r, s]",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3089010000000000000065023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 14: length of sequence [r, s] = 2**31 - 1",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "30847fffffff023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 15: length of sequence [r, s] = 2**31",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "308480000000023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 23: appending 0's to sequence [r, s]",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3067023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f820000",
+        False,
+    )
+    _check_der_message(
+        "tcId 24: prepending 0's to sequence [r, s]",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "30670000023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 26: appending null value to sequence [r, s]",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3067023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f820500",
+        False,
+    )
+    _check_der_message(
+        "tcId 30: including undefined tags",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "306daa00bb00cd003065023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 48: indefinite length",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3080023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f820000",
+        False,
+    )
+    _check_der_message(
+        "tcId 67: length of r uses long form encoding",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "306602813012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 68: length of r contains a leading 0",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "30670282003012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 114: length of s uses long form encoding",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3066023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d702813100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 115: length of s contains a leading 0",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3067023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d70282003100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 152: replaced r by r + n",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "306602310112b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19a25617aad7485e6312a8589714f647acf7a94cffbe8a724a023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 153: replaced r by r - n",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "30660231ff12b30abef6b5476fe6b612ae557c0425661e26b44b1bfe1a138f7ca6eeda02a462743d328394f8b71dd11a2a25001f64023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 155: replaced r by -r",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "30650230ed4cf541094ab8901949ed51aa83fbda99e1d94bb4e401e6250d35d71ceecf7c4571b51b33ba5fcdf542cc6b0e3ab729023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 156: replaced r by n - r",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3066023100ed4cf541094ab8901949ed51aa83fbda99e1d94bb4e401e5ec7083591125fd5b9d8bc2cd7c6b0748e22ee5d5daffe09c023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 158: replaced r by r + 2**384",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "306602310112b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 159: replaced r by r + 2**448",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "306e023901000000000000000012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28e3113083ba8e4ae4cc45a0320abd3394f1c548d7023100e7bf25603e2d07076ff30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04fecc47bff426f82",
+        False,
+    )
+    _check_der_message(
+        "tcId 232: Signature encoding contains incorrect types: r=0, s=0.25",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3008020100090380fe01",
+        False,
+    )
+    _check_der_message(
+        "tcId 233: Signature encoding contains incorrect types: r=0, s=nan",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3006020100090142",
+        False,
+    )
+    _check_der_message(
+        "tcId 234: Signature encoding contains incorrect types: r=0, s=True",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3006020100010101",
+        False,
+    )
+    _check_der_message(
+        "tcId 235: Signature encoding contains incorrect types: r=0, s=False",
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f20f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+        "313233343030",
+        "3006020100010100",
+        False,
+    )
+
+
+def test_wycheproof_ecdh_valid() raises:
+    # Wycheproof ecdh_secp384r1_ecpoint_test, one vector per kind of
+    # edge case. Private keys are padded to 48 bytes.
+    # tcId 1: normal case
+    assert_equal(
+        _ecdh_hex(
+            "766e61425b2da9f846c09fc3564b93a6f8603b7392c785165bf20da948c49fd1fb1dee4edd64356b9f21c588b75dfd81",
+            "04790a6e059ef9a5940163183d4a7809135d29791643fc43a2f17ee8bf677ab84f791b64a6be15969ffa012dd9185d8796d9b954baa8a75e82df711b3b56eadff6b0f668c3b26b4b1aeb308a1fcc1c680d329a6705025f1c98a0b5e5bfcb163caa",
+        ),
+        "6461defb95d996b24296f5a1832b34db05ed031114fbe7d98d098f93859866e4de1e229da71fef0c77fe49b249190135",
+    )
+    # tcId 3: shared secret has x-coordinate that satisfies x**2 = 0
+    assert_equal(
+        _ecdh_hex(
+            "a2b6442a37f8a3759d2cb91df5eca75b14f5a6766da8035cc1943b15a8e4ebb6025f373be334080f22ab821a3535a6a7",
+            "04490e96d17f4c6ceccd45def408cea33e9704a5f1b01a3de2eaaa3409fd160d78d395d6b3b003d71fd1f590fad95bf1c9d8665efc2070d059aa847125c2f707435955535c7c5df6d6c079ec806dce6b6849d337140db7ca50616f9456de1323c4",
+        ),
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    )
+    # tcId 6: shared secret has x-coordinate p-1
+    assert_equal(
+        _ecdh_hex(
+            "a2b6442a37f8a3759d2cb91df5eca75b14f5a6766da8035cc1943b15a8e4ebb6025f373be334080f22ab821a3535a6a7",
+            "04d69850ccbacc4736ea200ff2f8488f26247945a2ab48dd3708f494b293d8cba83417f48974881c7fb03854089bbf66cc1c773ec03cb8cd5f007ec3b03bdd05a409b352103f0decf25b41673ab8ca3d04334babee01219f15701f2bca22d40b37",
+        ),
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffe",
+    )
+    # tcId 7: shared secret has x-coordinate p-3
+    assert_equal(
+        _ecdh_hex(
+            "a2b6442a37f8a3759d2cb91df5eca75b14f5a6766da8035cc1943b15a8e4ebb6025f373be334080f22ab821a3535a6a7",
+            "0455c8e69b6415a85d7355973d5151de82232e4e7cb4f7fcbe519df43e279448d3e6662a94655a826d27645bb4400d3b0c9e841c419500f15232e31ee2883031af0d2a233188f82d2581a01417c74f5ca67bc09a1252c231743b559ed20ad9739d",
+        ),
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffc",
+    )
+    # tcId 8: shared secret has x-coordinate 2**16 + 0
+    assert_equal(
+        _ecdh_hex(
+            "a2b6442a37f8a3759d2cb91df5eca75b14f5a6766da8035cc1943b15a8e4ebb6025f373be334080f22ab821a3535a6a7",
+            "046039917aef03e2cc8ee437362882fff8fc4e1bd26a976950b8f49ee805ead13064346e3dedae226f878638010765b8f3024cece86e410dcede120def625150d2942bca8991d1d1db946ef1def4092dfa6f68a880da0e05148bc95fd1cb24f90b",
+        ),
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000",
+    )
+    # tcId 15: shared secret has x-coordinate with repeating bit-pattern of size 2
+    assert_equal(
+        _ecdh_hex(
+            "a2b6442a37f8a3759d2cb91df5eca75b14f5a6766da8035cc1943b15a8e4ebb6025f373be334080f22ab821a3535a6a7",
+            "040503006fa79bf989f03331537a55abf9c3e35051e3025dd0fc1f860f7cc2e70c6efc64d00e8c085b757cb371c7b6e408430456a166627c6d35f49a65343c1dd9b20723b37012789a40fbedf305765d575518e849ee03b9cc98b399ab59963d56",
+        ),
+        "555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555552",
+    )
+    # tcId 41: shared secret has an x-coordinate of approx p//3
+    assert_equal(
+        _ecdh_hex(
+            "a2b6442a37f8a3759d2cb91df5eca75b14f5a6766da8035cc1943b15a8e4ebb6025f373be334080f22ab821a3535a6a7",
+            "045c6ec664e5212f0ba35465347105e658641260354ca8fcd77479464c3bbf2a6eb22104712b30e3879857b21a4c66ad396fbff4263e4e59a3a294c59d80e6f18103d0f8a08f78e10f3996b2e4dff07b3301e2d42384fab1ce304fc2038228ee74",
+        ),
+        "5555555555555555555555555555555555555555555555555555555555555554ffffffffaaaaaaaaaaaaaaaaffffffff",
+    )
+    # tcId 45: y-coordinate of the public key has many trailing 0's
+    assert_equal(
+        _ecdh_hex(
+            "a2b6442a37f8a3759d2cb91df5eca75b14f5a6766da8035cc1943b15a8e4ebb6025f373be334080f22ab821a3535a6a7",
+            "046fcaf82d982d222d6096ba83e55b1c7dcb71a41e88f323333f44284d95c4bd3616da7a1bef928f31c26f885ba7adb487826fde2ed9f5649c11cf8465f8bf8ad50f68914936fc39666f68219d066506bea4001fdc816c9a90e7e2afb19bea085f",
+        ),
+        "000000000000000000000000000000000000000000000000000000001f03123b00000000000000000000000000000000",
+    )
+    # tcId 46: y-coordinate of the public key has many trailing 0's
+    assert_equal(
+        _ecdh_hex(
+            "2bc15cf3981eab6102c39f9a925aa1309db59c2c02a54411928d73c3945d157848dc36959efef7495c8528ea284c1c97",
+            "04000000000000000000000000000000000000000000000000000000001f03123b0000000000000000000000000000000071bd1e700c34075c3cade8ce29d33724af68a7672b265a4e157055360440ab7c461b8e9ac8024e63a8b9c17c00000000",
+        ),
+        "ea817dff44f1944a38444498f1b6c1a70a8b913aa326bc2acc5068805d8ddd7a5e41b8ee5b8371a1cf3f7a094258e3a6",
+    )
+    # tcId 49: y-coordinate of the public key is small
+    assert_equal(
+        _ecdh_hex(
+            "a2b6442a37f8a3759d2cb91df5eca75b14f5a6766da8035cc1943b15a8e4ebb6025f373be334080f22ab821a3535a6a7",
+            "04bfeb47fb40a65878e6b642f40b8e15022ade9ecfa8cb618043063494e2bc5d2df10d36f37869b58ef12dcc35e3982835fd2e55ec41fdfe8cabbbb7bcd8163645a19e9dac59630f3fe93b208094ff87cd461b53cef53482e70e2e8ea87200cc3f",
+        ),
+        "0000000000000000000000000000000000000000000000000000000036a2907c00000000000000000000000000000000",
+    )
+    # tcId 50: y-coordinate of the public key is small
+    assert_equal(
+        _ecdh_hex(
+            "2bc15cf3981eab6102c39f9a925aa1309db59c2c02a54411928d73c3945d157848dc36959efef7495c8528ea284c1c97",
+            "040000000000000000000000000000000000000000000000000000000036a2907c00000000000000000000000000000000000000007f57b69a014783dbfa4967b2f9cfa678a6f0b6e9cfd41648cec5b3c498e72152da3f82d3da2e8e9f8ef37b11",
+        ),
+        "bfa93e184f76279fd707d53ddcb3628855cfafb111bcbd0b4df6ef77aee624924d681626a153fa4e59c923b71fc090b3",
+    )
+    # tcId 53: ephemeral key has x-coordinate that satisfies x**2 = 0
+    assert_equal(
+        _ecdh_hex(
+            "2bc15cf3981eab6102c39f9a925aa1309db59c2c02a54411928d73c3945d157848dc36959efef7495c8528ea284c1c97",
+            "040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003cf99ef04f51a5ea630ba3f9f960dd593a14c9be39fd2bd215d3b4b08aaaf86bbf927f2c46e52ab06fb742b8850e521e",
+        ),
+        "6092a1757ddd43a04e185ff9472a0d18c7f7a7dc802f7e059e0c69ae16c802651719406e04de27652ff83da4a780ef2f",
+    )
+    # tcId 56: ephemeral key has x-coordinate p-1
+    assert_equal(
+        _ecdh_hex(
+            "2bc15cf3981eab6102c39f9a925aa1309db59c2c02a54411928d73c3945d157848dc36959efef7495c8528ea284c1c97",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffe732152442fb6ee5c3e6ce1d920c059bc623563814d79042b903ce60f1d4487fccd450a86da03f3e6ed525d02017bfdb3",
+        ),
+        "edf040bace18d90bf9ce720df2a3b31d76d95b7ed9530a159ac0b24e82a871033eada40552f9e606f7115e6a78927511",
+    )
+    # tcId 57: ephemeral key has x-coordinate p-3
+    assert_equal(
+        _ecdh_hex(
+            "2bc15cf3981eab6102c39f9a925aa1309db59c2c02a54411928d73c3945d157848dc36959efef7495c8528ea284c1c97",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffc2de9de09a95b74e6b2c430363e1afb8dff7164987a8cfe0a0d5139250ac02f797f81092a9bdc0e09b574a8f43bf80c17",
+        ),
+        "200aef7a451b8c63ba70c04c6bca08e638d8e790f0f1856f9f627c2ce5000c7ac55e798a8980a59ae08a6ec9035095b8",
+    )
+    # tcId 58: ephemeral key has x-coordinate 2**16 + 0
+    assert_equal(
+        _ecdh_hex(
+            "2bc15cf3981eab6102c39f9a925aa1309db59c2c02a54411928d73c3945d157848dc36959efef7495c8528ea284c1c97",
+            "040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000a238f1af3bdb9ff563b0d0bdfd18323518b74192cd7a25f4b5839b8b078f3414eb8cea4949382d67987f4ea2d29cfa7",
+        ),
+        "731372d49ea01646c43820996816228f9d297684f8081dabd7d50635cfb99a6e51ab216fc427d494e9f439a4e161c167",
+    )
+    # tcId 65: ephemeral key has x-coordinate with repeating bit-pattern of size 2
+    assert_equal(
+        _ecdh_hex(
+            "2bc15cf3981eab6102c39f9a925aa1309db59c2c02a54411928d73c3945d157848dc36959efef7495c8528ea284c1c97",
+            "045555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555520e2e16767adcc10e411b7de3123c804391e6534a58e63ee92d5148cc39836179d6e26f80813d1e98e37d2a969aec1be3",
+        ),
+        "59dd421ec1f56010516604d9f5b94db3c33c5c26f1bc903b89251ef972eb74544d571bdd3c4fcfc0bb2ae0810c8dc6e1",
+    )
+    # tcId 91: ephemeral key has an x-coordinate of approx p//3
+    assert_equal(
+        _ecdh_hex(
+            "2bc15cf3981eab6102c39f9a925aa1309db59c2c02a54411928d73c3945d157848dc36959efef7495c8528ea284c1c97",
+            "045555555555555555555555555555555555555555555555555555555555555554ffffffffaaaaaaaaaaaaaaaaffffffff6b43c195e844c8644ab19430687ef70072e8415ac723e06be802364b62e2f8ef74b3395806db736dc5ad68bb9e47bd8f",
+        ),
+        "1783c15fa810c276bfbade2d24ff690f6d22331b4e9ec13948db959c2807f9a3564a074bb7cccf14584a63a10a0bf038",
+    )
+    # tcId 95: edge case for Jacobian and projective coordinates
+    assert_equal(
+        _ecdh_hex(
+            "938f3dbe37135cd8c8c04182952f6e6f9bfe7a4cff4eacf90612a48865dc43e9b5d230f761d1fc4dfb69be20e84ccc8f",
+            "0487221e1bb91d5b6f6852b8026b4f07fa3feed095f9173896854132a1ef7740205f57a5a8f157ea59837b27677e465bc86385be41e0220ccb27e61d1539ac35c0230c1a7085fa1b35a4fccbee2f31c91ec56ad0e20d718c66e2329e09f96f2ceb",
+        ),
+        "f722b9e9bc9ae1658fe88be2b585cc97ca6e3ceb0be0b7cf6a948726686d9182045fa7291cb185164f8e777649242dc4",
+    )
+    # tcId 270: edge case for computation of x with projective coordinates
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04a7c28ff446c58080c6c77d19d559f1394b791ced8694c94d58c3f7196903b0807fa9a5a8e6032ed5af0f7d7512093cc41d7c7165d57c6d8e12ff9e7f3ed75a608e6a2d81043df37edd98056beefa007c9c4e399b69e9a9cdcdeb02ad8521dd8a",
+        ),
+        "2d821d63ea67645578c105f76df7abf24a0fdc2d44c1b9f69e77876b45bbdc781d822d92d6fd5a8677c5484282fb3eba",
+    )
+    # tcId 375: edge case for computation of y with projective coordinates
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "043462d0f03e51bbd9d3404e7a84f60f56f371cfb660ec777d9be9bc8d41982feed98c74845699d1c253b3c97978692f920d54235e16a17060df480745c657f0f6c02c97a9ad071213948b415000879c0eda5dde2ede4c51ed5c88f70bc085826f",
+        ),
+        "feefab22b7d24a54c21997e31f46cbad4b8b810e716345b563ad25a615373a26ea235fda17fc1b717f768f29ed616c9f",
+    )
+    # tcId 480: point with coordinate x = 0
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003cf99ef04f51a5ea630ba3f9f960dd593a14c9be39fd2bd215d3b4b08aaaf86bbf927f2c46e52ab06fb742b8850e521e",
+        ),
+        "96876e9ed89edf3e3dfd8ead06dcba0acdce7763eb98aded82976fa36181c79ac4e833df385af5ee860ca1f20df4cb72",
+    )
+    # tcId 483: point with coordinate x = 0 in left to right addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04fa8919e4524e7040489cc17aa3d620f88276ef248d1ecd1e9a6637c7a06765f6f1d593b1febe331b9f696e82c5be61a4a074a912309662f44ce0825bf134582116cac3310577d5a00722ba513e6334cc17101091223346db67063cf6e7bffbff",
+        ),
+        "43484dcf01492eab684d39881908da7f40119fe7183bba625c32fdc14da3c4236dc3397234e7db41857495cd0d09491b",
+    )
+    # tcId 504: point with coordinate x = 0 in precomputation or right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "047f12cb987b08c235523465146b42258584398062a107429ce486b4b2f26a9628293ae4d30aa61c64bf92f97e6c08aea8d6621cfce5270cd7fa69dcb038ed8ba428afd77d528c230f8e5c9b83ef659c7e573f6671a18d8b8c4ceb20f2d760858e",
+        ),
+        "e7eac460eada6eb99988cc39f6129a74d9510d2ec39601adae76b2b8fd6122407b79411f8e7adfbc4f0dc50da9f2b82b",
+    )
+    # tcId 510: point with coordinate x = 0 in right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "042395d00779b6c7d4dad8cc9a8918496c28b2d4077e6886d0a1bef515e3125ddd813e5a9ea0f185cd009a69ea92210174b676775f763183c86f6fa50551ba137d79a83e8e32ff2fc09a2c28cdf80cddafcc0f40693e3985f28fe5c7dfe2d8b275",
+        ),
+        "c269465cfb336ed8c7e9c0377349193aa4dbdb92a9f4670dbf7fa7a1f7556e8e4b240d5b70edeedd1bf5ce769cb8415e",
+    )
+    # tcId 515: point with coordinate x = 2
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002732152442fb6ee5c3e6ce1d920c059bc623563814d79042b903ce60f1d4487fccd450a86da03f3e6ed525d02017bfdb3",
+        ),
+        "3dedc59aff8e4755f28f8e8a27bd45f9196a7e910b61f8628158f1915222647621d37513219d003df62ecf4823d83594",
+    )
+    # tcId 518: point with coordinate x = 2 in left to right addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "043c6ed8a05ef83ae416c1600c9281deb49429649a3c41a613aff2436caf248561f4884a2bf7cfdc76e0a4afd1ab3cc763b612ff25de4b21323cb4e38db413d22dc3cbe507c0705e97442bcc3bf656c29f9e0edca8612f50082649caea515b16b0",
+        ),
+        "7130c43ddd9bbdd7ec3d743f0cfd0c91ff9afdb74ab34364d9e397d747cdfeeb61b16e7789175eb9589ed46b232c8c32",
+    )
+    # tcId 539: point with coordinate x = 2 in precomputation or right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04d368a53dd39dfe7a51b99ab088185e564d7eacf8e842c6a3a44f8dea05761452572b2ca9bd9034eeedc08f7c938337be621936c6000dc02ba6631e5979c753439baf7ecdddfd78dee5f5fda12e6bb2c932816ac6339a5474e68cbebdf0107266",
+        ),
+        "bdbd8cd333f2351d7d046e9af4ee208a3230904a095d1f82a58e9ed60545ff958b21a8f5cbcda47c0dc566a0706839dc",
+    )
+    # tcId 545: point with coordinate x = 2 in right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04c7cb6e680d888babb9a66609d9c5b8db13df5b7ee6a9ed522800a3d71b814773d822386d5362d5d2b9a6f76380d705a6145d3155cf6ba275a679630b239a3440073123001ac5618aa95f812e5e71eff891a57d06ff283d3c51c2bffca6820cca",
+        ),
+        "b341c77879420ad78ef17ff2f4468b25277f134285b0fe5f966b49769c1deac7c06d59ed1a516ef1bc012bf6e124ba86",
+    )
+    # tcId 550: point with coordinate x = 3
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000036660041b1c7984620e8d7fd7ccdb50cc3ba816da14d41a4d8affaba8488867f0ca5a24f8d42dd7e44b530a27dc5b58da",
+        ),
+        "aec62d6b8544c9d6c22711d2d140479829a79c5b0db2f9b13b6f9b2068068c23932b6cd0126fb16393e3dee5bf008324",
+    )
+    # tcId 553: point with coordinate x = 3 in left to right addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04f0428dece48eaaeae58b105677ed87645895361c50eb2db518bd5d83c424bae1d278aa5037bd6ff70aa291b2122272b720e6ec89a5ab4bf9622aea08999e7fd7b6258d79887ed56f984883a353ca2152ab685ef105f3c96f4724d1a22de36dce",
+        ),
+        "712b2f6db58d1318af53337395f94920ddd86eb6143ef7c6de83c3a28807e9646706df85d6242fe5d6358d57c271a4bd",
+    )
+    # tcId 574: point with coordinate x = 3 in precomputation or right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "049d5fe82ef8a0b941e209d6fd927ae76e70f60980484c78e9e7a9e2c6b18d16d5b2006212fe145e0b836af67d0689fc55156eae9000cd9d013bdea880c9d11ee7c7a6c75556a36a24726cc3f127a34db21a0559835ee6713acdd29d4e3976d1e0",
+        ),
+        "602d453cd2ae2f18ded2bab5343c0c90cb6c5c9314c5c62c64513b49f64392189d424d5babd91d0a1f809a9ba4f6abcd",
+    )
+    # tcId 580: point with coordinate x = 3 in right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "041f61487f10abd759778e3dc723fb4d1510a6955a0a40b0f5a8f850050fb920382c180484794e77a909f269a7cee01bd54ffefe1ab55c7953d8c83f7d9bb28ed51e94e7e2525ebd212c804e82ead4fa024300afeef9b339cad5b6eaab88a80774",
+        ),
+        "62670cffe31d4c38b9056c28c069fc676d7eb0a38e840ff8e8d09cae2bf8412bbb37f69cb31d6baa69bd17c39900dce5",
+    )
+    # tcId 585: point with coordinate y = 1
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "042261b2bf605c22f2f3aef6338719b2c486388ad5240719a5257315969ef01ba27f0a104c89704773a81fdabee6ab5c78000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        ),
+        "c923fb0d4b24e996e5e0d5df151d3c26b1f61c05b17b7fb39fc8590b47eeaff34709f6f7328923bdcaf7e8e413d77ddc",
+    )
+    # tcId 588: point with coordinate y = 1 in left to right addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04111447d242f6b421ca91f561d04b2f1d2f0d9212d918bb4a0ffb1ae6459d078e21a312b2a12594fc8c78fe944c81d513d3c981d5e9cda06c4380d1a842ca5bb51ed3a712b049dda3a50ce10a9fbd0b69dfffaff0787c74d83237ba9c4686a01e",
+        ),
+        "69426158a29971ef44b11783ef559ef4297246611c994d4815637128869d5f6a0202632fe9b5ad7c365b63050c9f2d08",
+    )
+    # tcId 609: point with coordinate y = 1 in precomputation or right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04276a5a274b46a0a36f811cf64bc7a644d5ad9c124be002a6fdd1cc111880655c8d2987674ea49e7d70d2a0ae820d1a7d4ec3bae2dd1d77af082fabcd68ac20f209e8fa446478794223be1d63d71987e964e45f0bcf6a2ea0a12c633445285a46",
+        ),
+        "283502355b21189f7361e89457550974f86ae2b66d025506899c15b390da248e14fd1b4f25c8584d1a71e7f8c93fa976",
+    )
+    # tcId 615: point with coordinate y = 1 in right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04d9a9d1e0aacaef4aecf241d690ee4101df74d7a37f18ce3181128f8d4255cd34702b17f116b2506cb8f577d9357e3629966e62e6f95c9eb7833ccc1f22956a1e2599a875f8139d9a2b31e2000611b4d6db1d23e7f0db5b5c17bb44e150ea2695",
+        ),
+        "854772b9b77d4687571f1934061dbce0016d47b90a8b5d38229475c213cd5df25f960b775ae72909cccc5ba14dd03448",
+    )
+    # tcId 620: point with coordinate y = 2
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04742b1363c46dbf7b0856f75f64c464dcbe246ff7966c1498faa711c4cf9c00f1e800d93cc04a3455923800cf11c812f4000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002",
+        ),
+        "abe3cccf507d0537ba0d383492f9e754ff4c6ea73c53a4f97beedf1052e5be0474f364159e1abed97f043cfc22647c45",
+    )
+    # tcId 623: point with coordinate y = 2 in left to right addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04144b6c2552d496325b285de190257082189d620a0baa936b1c99a5600c6ec1285f03b8dba76a9e2536fddd45a76c04daa5a30cef6687ea4942522f6ff2c1133e712416282748c67146205b603fed9619dcb00a23dbc8ed8a4a087ac4004a7f01",
+        ),
+        "2f8762b460f3d265625225cc0e3c6514b2465970e63234eb4f57718ad83ad1986f59b146c34326dec811e3c947a7192e",
+    )
+    # tcId 644: point with coordinate y = 2 in precomputation or right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "0494c4448e99d429748c5f82596d5c7329ea5ce93ce897cd7ab8fbfa8003912fa9b309e7958b6a64eba4f11c2a699b6dfc7d6d15ec8f22e0fe9e5de2e93e394364af10d151facb202c80998c39b75e45e3682bf0afa49d1795d30120d697179ea1",
+        ),
+        "a868b00945243e3bd7ecf6d45aa26d44288869b1940f2997e146dc526f0779ec08a6bbe747ac67fbbd6fac2a3d682588",
+    )
+    # tcId 650: point with coordinate y = 2 in right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "048f5ad790ceafe7f3f61aa37b25c4fd9ed7816e6ff01967707e85956562eccf112489e91620596c4ee921f001da4d708c93769fc9431370eb85ba044d201464a010df4eba574504297502cc4c5d18fd363c369965daf32c4537221ead8e72279e",
+        ),
+        "f2c55c07e60f12d2438d854c9811d11ec38b55ae19fa9117ea6f1999c71e5e938971b94500afa6e6371a829917ac7c66",
+    )
+    # tcId 655: point with coordinate y = 3
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "049191a271dd990a43bd7c161f39eb0da671e729aad96215af4a9b75047f5b0e964fdceef9cd468abc0fc0ba0c2da5f786000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
+        ),
+        "c9399d4bdace4627fc0681546c4feb01e79347dab4d75aabcdf5fe1f4f74c9b9185d6bd9c062d68d332e0a5a201a5a34",
+    )
+    # tcId 664: point with coordinate y = 3 in left to right addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04cc363d581c7125ee8e2da1f936f6519215813357a31f8b296775e47a363e643c12ba0f97c4c075d0b9f7799b56c80874083efb1dd735550fb5de2ea6cbf0742315ea1ccb2f47a46b2105757576af5f8fd2255b5b83cd234bed906c29556d52b9",
+        ),
+        "af2d3a6f0638565a05620155d435436e5637db7ee3ff6d924ad9bcd157f274cfa43a6224c8407b029f0583b112f1d489",
+    )
+    # tcId 727: point with coordinate y = 3 in precomputation or right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04282362c49bbedef495aa245d5d471f561bea53a32554e5eff44f3efe4910e01b84716f526da2e8c44f6c5a5d2e3ea1cf68c6d0952ad8d3a51e7c6736cb48e1c8619a954688a48cc4fe32c1056e5da62fc17576a6fc3ab4b0f45125e3099b388b",
+        ),
+        "1246944fa37f6f0b98a1e66ad783ee396f6b329508e568cca9209034ae120bba2a61176e38e3c81973b962d0d36c6975",
+    )
+    # tcId 745: point with coordinate y = 3 in right to left addition chain
+    assert_equal(
+        _ecdh_hex(
+            "c1781d86cac2c052b7e4f48cef415c5c133052f4e504397e75e4d7cd0ca149da0b4988b8a6ded5ceae4b580691376187",
+            "04989781d39b82c02febe6d7d68186703a2c8ac54e301085bd823bb84feebd50cb38cb38589237aa0c40422b2b656946bb1076019d401d9faed3775e92aebaba28b8a754449b0f7b2d1d617870d6f7aae7875e48430f3e0eaf75cd80332bdf8462",
+        ),
+        "bbf52203321a68301d20edff5cf809e1ef180b48e9e1867f50c0df6dee1ca45fb48f68e7479a3376ce5dda0f7b445068",
+    )
+    # tcId 760: edge case private key
+    assert_equal(
+        _ecdh_hex(
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
+            "04e9dfaaab808b3aac1ccca7cc6242a7ee583249afe8ee8f66b904cc8eec34ad334456e00f33a94de8b5169cf0199550c020156e9651734ff999c5f3ea62b83d0083a6093f234457251ecf72c41e4df7cea2420b5454a7f690034380bac981e92e",
+        ),
+        "455aea9924330bd6d2d6403478327900e172e93598e254cf6d8eb13f0a3d21be51a46107333844e61dfa3d80df6928e9",
+    )
+
+
+def test_wycheproof_ecdh_invalid() raises:
+    # Points that are not on the curve, compressed or otherwise malformed
+    # encodings (only the uncompressed form is supported) and points on the
+    # twist must all be rejected.
+    # tcId 2: compressed public key (acceptable)
+    assert_equal(
+        _ecdh_hex(
+            "766e61425b2da9f846c09fc3564b93a6f8603b7392c785165bf20da948c49fd1fb1dee4edd64356b9f21c588b75dfd81",
+            "02790a6e059ef9a5940163183d4a7809135d29791643fc43a2f17ee8bf677ab84f791b64a6be15969ffa012dd9185d8796",
+        ),
+        "error",
+    )
+    # tcId 773: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        "error",
+    )
+    # tcId 774: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        ),
+        "error",
+    )
+    # tcId 775: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffe",
+        ),
+        "error",
+    )
+    # tcId 776: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff",
+        ),
+        "error",
+    )
+    # tcId 777: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        "error",
+    )
+    # tcId 778: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        ),
+        "error",
+    )
+    # tcId 779: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffe",
+        ),
+        "error",
+    )
+    # tcId 780: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff",
+        ),
+        "error",
+    )
+    # tcId 781: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffe000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        "error",
+    )
+    # tcId 782: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffe000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        ),
+        "error",
+    )
+    # tcId 783: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffefffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffe",
+        ),
+        "error",
+    )
+    # tcId 784: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffefffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff",
+        ),
+        "error",
+    )
+    # tcId 785: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        "error",
+    )
+    # tcId 786: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        ),
+        "error",
+    )
+    # tcId 787: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffe",
+        ),
+        "error",
+    )
+    # tcId 788: point is not on curve (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff",
+        ),
+        "error",
+    )
+    # tcId 789: empty public key (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "c6cafb74e2a50c82c7a63d13294bfea13d0bc504ba2b08a392c9081bf3815d9e44d969ed7f05ffd1d8594355053c6147",
+            "",
+        ),
+        "error",
+    )
+    # tcId 790: invalid public key (invalid)
+    assert_equal(
+        _ecdh_hex(
+            "2b9e57572da6cf4fb58cb94eab8df19383a136f219f2a515776a8bf48e1538dd1d811946c16d9f0184c9ce5cdf1dac51",
+            "024424530ea70bace90601f8d5869e4179a6cd689b6a18fdfec50cecf17cb836d24820211ada67815b42c2c2606303f69e",
+        ),
+        "error",
+    )
+
+
+def test_private_key_from_bytes() raises:
+    # d = (seed mod (n - 1)) + 1; expected values from Python integers.
+    assert_equal(
+        _derive_hex(
+            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ),
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+    )
+    assert_equal(
+        _derive_hex(
+            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+        ),
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002",
+    )
+    assert_equal(
+        _derive_hex(
+            "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52970"
+        ),
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52971",
+    )
+    assert_equal(
+        _derive_hex(
+            "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52971"
+        ),
+        "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52972",
+    )
+    assert_equal(
+        _derive_hex(
+            "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52972"
+        ),
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+    )
+    assert_equal(
+        _derive_hex(
+            "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973"
+        ),
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002",
+    )
+    assert_equal(
+        _derive_hex(
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        ),
+        "00000000000000000000000000000000389cb27e0bc8d220a7e5f24db74f58851313e695333ad68e0000000000000000",
+    )
+    assert_equal(
+        _derive_hex(
+            "3e421b4c5fc36774a26a7bfcf51a7b45065ccd08ef9cfe25c46f8780bdb24532883f678ac85d3e870c4705de623958a8d7e77b64a4ff0d2e"
+        ),
+        "a26a7bfcf51a7b45065ccd08ef9cfe25d234192ab39196ffba504cb67c566d3fe401369e865690309f0f8634a8256787",
+    )
+    assert_equal(
+        _derive_hex(
+            "2eb1616a726c1f5464d4af1422db91d00e128a2948ab7279f209d61c612a948b3b9acd1c8eeed390b2edd3491fb3ce3a3f28b6f47068ce06"
+        ),
+        "64d4af1422db91d00e128a2948ab7279fc5d38115a402b535693d0db1382bbec8bf840662910e0b40034e6471f9a669f",
+    )
+    assert_equal(
+        _derive_hex(
+            "7e6c6b03dee43ed7651afd26eadeada66e7cdc0ca244690794f7b3f7b62f1e12bada78d09420ddf2b93d6dfcace2007248f85dcbd4d9c525"
+        ),
+        "651afd26eadeada66e7cdc0ca2446907b0eccd9766e410dc4bc1ab6e2056e686c5ae518055ca7518791baba255b25a68",
+    )
+    assert_equal(
+        _derive_hex(
+            "2ff0b991c8bb99f33d4b5009f5332ba39f40e17ad5477b446567baf4d09af211b3913dff386f0ee379e7dccbeb67235e51e011b7627c43365b"
+        ),
+        "4b5009f5332ba39f40e17ad5477b447001bbaac511f4c7c9ca13f62a54ffb25b25d6203c9956f0c7a162ee647fcf2032",
+    )
+    assert_equal(
+        _derive_hex(
+            "655e23ad75c036c89d32fae05516fd2b3b016b21c2905f8fb0493662cca49f64e352aa3a71fb0c7372a559092d5e298ae1105f677ff52902fba8a814f0efbca5"
+        ),
+        "3b016b21c2905f8fc6b3da3bd9e9280a3dbf8770dce1f1d32750771847e6c25a70fea6b76969eb147c752f5148101c80",
+    )
+    assert_equal(
+        _derive_hex(
+            "f03ae2e0850b1f2607407f1ae4abfa18a2fe068b3b133f2b3cf1db95283e7d89e859899053c54f0e41c688ccf897b86fe8ea44dc7690b75706577990b4e9148598d8ce68df7bb3739d20dba64c059ae00cf80bb1bc8d2a944ebb6703455b14d9902214f6"
+        ),
+        "aa6798f54d88d89fdad9faced40714b9df15e6d6495aeba77ab0b774d9abaddce44bb6f1693420a8726c667bf8a10a27",
+    )
+    # Fewer than 56 bytes would leave a detectable bias.
+    for count in [0, 1, 48, 55]:
+        var short = _stream("short seed", count)
+        var raised = False
+        try:
+            _ = p384_private_key_from_bytes(Span(short))
+        except e:
+            raised = True
+        assert_true(raised)
+    # Every derived key is usable.
+    for i in range(4):
+        var seed = _stream(String(t"usable {i}"), 56)
+        var d = p384_private_key_from_bytes(Span(seed))
+        var public_key = p384_public_key(Span(d))
+        assert_equal(public_key[0], 0x04)
+
+
+def test_invalid_private_keys_are_rejected() raises:
+    var zero = "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    var order = "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973"
+    var above = "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52974"
+    var ones = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    var short = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+    var long = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+    var g = "04aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab73617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f"
+    for key in [zero, order, above, ones, short, long, ""]:
+        assert_true(_public_fails(key))
+        assert_true(_sign_fails(key))
+        assert_equal(_ecdh_hex(key, g), "error")
+    # The two ends of the valid range work.
+    assert_equal(
+        _public_hex(
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+        ),
+        g,
+    )
+    assert_equal(
+        _public_hex(
+            "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52972"
+        ),
+        "04aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7c9e821b569d9d390a26167406d6d23d6070be242d765eb831625ceec4a0f473ef59f4e30e2817e6285bce2846f15f1a0",
+    )
+    assert_false(
+        _sign_fails(
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+        )
+    )
+    assert_false(
+        _sign_fails(
+            "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52972"
+        )
+    )
+    assert_equal(
+        _ecdh_hex(
+            "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52972",
+            g,
+        ),
+        "aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7",
+    )
+
+
+def test_sign_verify_round_trip() raises:
+    for i in range(6):
+        var seed = _stream(String(t"key {i}"), 56)
+        var d = p384_private_key_from_bytes(Span(seed))
+        var public_key = p384_public_key(Span(d))
+        # Digest lengths below, at and above the order size, and empty.
+        for count in [0, 20, 32, 48, 64]:
+            var digest = _stream(String(t"digest {i} {count}"), count)
+            var sig = p384_sign(Span(d), Span(digest))
+            assert_true(p384_verify(Span(public_key), Span(digest), Span(sig)))
+            # Deterministic nonces give the same signature again.
+            var again = p384_sign(Span(d), Span(digest))
+            assert_equal(hex_encode(Span(again)), hex_encode(Span(sig)))
+            # Another key or another digest must not verify.
+            var other = _stream(String(t"other {i} {count}"), count + 1)
+            assert_false(p384_verify(Span(public_key), Span(other), Span(sig)))
+            var g = hex_decode(
+                "04aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab73617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f"
+            )
+            assert_false(p384_verify(Span(g), Span(digest), Span(sig)))
+
+
+def test_digest_truncation() raises:
+    # FIPS 186-4: only the leftmost 48 bytes of a longer digest count.
+    var seed = _stream("truncation key", 56)
+    var d = p384_private_key_from_bytes(Span(seed))
+    var public_key = p384_public_key(Span(d))
+    var long = _stream("long digest", 64)
+    var sig = p384_sign(Span(d), Span(long))
+    var prefix = p384_sign(Span(d), Span(long)[0:48])
+    assert_equal(hex_encode(Span(sig)), hex_encode(Span(prefix)))
+    assert_true(p384_verify(Span(public_key), Span(long)[0:48], Span(sig)))
+    long[63] ^= 0x01
+    assert_true(p384_verify(Span(public_key), Span(long), Span(sig)))
+    long[47] ^= 0x01
+    assert_false(p384_verify(Span(public_key), Span(long), Span(sig)))
+    # A shorter digest is not the same as one padded with zeros on the right.
+    var short = _stream("short digest", 20)
+    var short_sig = p384_sign(Span(d), Span(short))
+    var padded = short.copy()
+    padded.append(0x00)
+    assert_false(p384_verify(Span(public_key), Span(padded), Span(short_sig)))
+    # ... but it is the same as one padded on the left up to the order size.
+    var left = List[UInt8](length=28, fill=0)
+    for byte in short:
+        left.append(byte)
+    assert_true(p384_verify(Span(public_key), Span(left), Span(short_sig)))
+
+
+def test_verify_rejects_every_single_bit_flip() raises:
+    var seed = _stream("bit flip key", 56)
+    var d = p384_private_key_from_bytes(Span(seed))
+    var point = p384_public_key(Span(d))
+    var public_key = List[UInt8](Span(point))
+    var digest = _stream("bit flip digest", 48)
+    var raw = p384_sign(Span(d), Span(digest))
+    var sig = List[UInt8](Span(raw))
+    assert_true(p384_verify(Span(public_key), Span(digest), Span(sig)))
+    for bit in range(8 * len(digest)):
+        digest[bit // 8] ^= UInt8(1) << UInt8(bit % 8)
+        assert_false(p384_verify(Span(public_key), Span(digest), Span(sig)))
+        digest[bit // 8] ^= UInt8(1) << UInt8(bit % 8)
+    for bit in range(8 * len(sig)):
+        sig[bit // 8] ^= UInt8(1) << UInt8(bit % 8)
+        assert_false(p384_verify(Span(public_key), Span(digest), Span(sig)))
+        sig[bit // 8] ^= UInt8(1) << UInt8(bit % 8)
+    for bit in range(8 * len(public_key)):
+        public_key[bit // 8] ^= UInt8(1) << UInt8(bit % 8)
+        assert_false(p384_verify(Span(public_key), Span(digest), Span(sig)))
+        public_key[bit // 8] ^= UInt8(1) << UInt8(bit % 8)
+    assert_true(p384_verify(Span(public_key), Span(digest), Span(sig)))
+
+
+def test_verify_rejects_malformed_input() raises:
+    # The RFC 6979 A.2.6 "sample" signature, then damaged copies of it.
+    var key = "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720"
+    var digest = "9a9083505bc92276aec4be312696ef7bf3bf603f4bbd381196a029f340585312313bca4a9b5b890efee42c77b1ee25fe"
+    var r = "94edbb92a5ecb8aad4736e56c691916b3f88140666ce9fa73d64c4ea95ad133c81a648152e44acf96e36dd1e80fabe46"
+    var s = "99ef4aeb15f178cea1fe40db2603138f130e740a19624526203b6351d0a3a94fa329c145786e679e7b82c71a38628ac8"
+    assert_true(_verify_hex(key, digest, r + s))
+    # The (r, n - s) twin is a valid ECDSA signature too.
+    assert_true(
+        _verify_hex(
+            key,
+            digest,
+            r
+            + "6610b514ea0e87315e01bf24d9fcec70ecf18bf5e69dbad9a727ea302393848fb4f04c6cd0423fdc7169525094629eab",
+        )
+    )
+    # r or s zero, equal to n, or above n.
+    var zero = "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    var order = "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973"
+    var ones = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    assert_false(_verify_hex(key, digest, zero + s))
+    assert_false(_verify_hex(key, digest, r + zero))
+    assert_false(_verify_hex(key, digest, zero + zero))
+    assert_false(_verify_hex(key, digest, order + s))
+    assert_false(_verify_hex(key, digest, r + order))
+    assert_false(_verify_hex(key, digest, ones + s))
+    assert_false(_verify_hex(key, digest, r + ones))
+    # Swapped halves and wrong lengths.
+    assert_false(_verify_hex(key, digest, s + r))
+    assert_false(_verify_hex(key, digest, ""))
+    assert_false(_verify_hex(key, digest, r))
+    assert_false(_verify_hex(key, digest, r + s + "00"))
+    assert_false(_verify_hex(key, digest, "00" + r + s))
+    assert_false(
+        _verify_hex(
+            key,
+            digest,
+            r
+            + "99ef4aeb15f178cea1fe40db2603138f130e740a19624526203b6351d0a3a94fa329c145786e679e7b82c71a38628a",
+        )
+    )
+    # Malformed public keys: empty, truncated, extended, wrong prefix,
+    # compressed, off the curve, coordinates not below p.
+    assert_false(_verify_hex("", digest, r + s))
+    assert_false(_verify_hex("04", digest, r + s))
+    assert_false(
+        _verify_hex(
+            "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd25332647",
+            digest,
+            r + s,
+        )
+    )
+    assert_false(_verify_hex(key + "00", digest, r + s))
+    assert_false(
+        _verify_hex(
+            "03ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720",
+            digest,
+            r + s,
+        )
+    )
+    assert_false(
+        _verify_hex(
+            "00ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720",
+            digest,
+            r + s,
+        )
+    )
+    assert_false(
+        _verify_hex(
+            "02ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc13",
+            digest,
+            r + s,
+        )
+    )
+    assert_false(
+        _verify_hex(
+            "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264721",
+            digest,
+            r + s,
+        )
+    )
+    assert_false(
+        _verify_hex(
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            digest,
+            r + s,
+        )
+    )
+    assert_false(
+        _verify_hex(
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff8015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720",
+            digest,
+            r + s,
+        )
+    )
+    assert_false(
+        _verify_hex(
+            "04ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            digest,
+            r + s,
+        )
+    )
+    # The negated key is a valid point but the wrong signer.
+    assert_false(
+        _verify_hex(
+            "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc137fea2648d282a8dbb15710653f39de7698f75a6c980620460ab357b4c0e3624dd774dce2c51f2b018cbb02dbccd9b8df",
+            digest,
+            r + s,
+        )
+    )
+
+
+def test_ecdh_is_symmetric() raises:
+    for i in range(6):
+        var seed_a = _stream(String(t"alice {i}"), 56)
+        var seed_b = _stream(String(t"bob {i}"), 64)
+        var a = p384_private_key_from_bytes(Span(seed_a))
+        var b = p384_private_key_from_bytes(Span(seed_b))
+        var public_a = p384_public_key(Span(a))
+        var public_b = p384_public_key(Span(b))
+        var ab = p384_ecdh(Span(a), Span(public_b))
+        var ba = p384_ecdh(Span(b), Span(public_a))
+        assert_equal(hex_encode(Span(ab)), hex_encode(Span(ba)))
+        # A key agreed with oneself is the x-coordinate of d^2 G; it must
+        # differ from the secret shared with the other party.
+        var aa = p384_ecdh(Span(a), Span(public_a))
+        assert_false(hex_encode(Span(aa)) == hex_encode(Span(ab)))
+
+
+def test_ecdh_rejects_invalid_points() raises:
+    var d = "6b9d3dad2e1b8c1c05b19875b6659f4de23c3b667bf297ba9aa47740787137d896d5724e4c70a825f872c9ea60d2edf5"
+    var good = "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720"
+    assert_false(_ecdh_hex(d, good) == "error")
+    # Off the curve, on the twist, coordinates not below p.
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264721",
+        ),
+        "error",
+    )
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc148015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720",
+        ),
+        "error",
+    )
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        "error",
+    )
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff8015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720",
+        ),
+        "error",
+    )
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc13fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff",
+        ),
+        "error",
+    )
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "04ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        ),
+        "error",
+    )
+    # x = 2 is on the curve; x + p names the same point but is not
+    # a canonical field element.
+    assert_false(
+        _ecdh_hex(
+            d,
+            "040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000028cdeadbbd04911a3c1931e26df3fa6439dca9c7eb286fbd46fc319f0e2bb780232baf57825fc0c1912ada2fefe84024c",
+        )
+        == "error"
+    )
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "04fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000001000000018cdeadbbd04911a3c1931e26df3fa6439dca9c7eb286fbd46fc319f0e2bb780232baf57825fc0c1912ada2fefe84024c",
+        ),
+        "error",
+    )
+    # Wrong lengths and encodings.
+    assert_equal(_ecdh_hex(d, ""), "error")
+    assert_equal(_ecdh_hex(d, "00"), "error")
+    assert_equal(_ecdh_hex(d, "04"), "error")
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "04ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd25332647",
+        ),
+        "error",
+    )
+    assert_equal(_ecdh_hex(d, good + "00"), "error")
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "05ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc138015d9b72d7d57244ea8ef9ac0c621896708a59367f9dfb9f54ca84b3f1c9db1288b231c3ae0d4fe7344fd2533264720",
+        ),
+        "error",
+    )
+    assert_equal(
+        _ecdh_hex(
+            d,
+            "02ec3a4e415b4e19a4568618029f427fa5da9a8bc4ae92e02e06aae5286b300c64def8f0ea9055866064a254515480bc13",
+        ),
+        "error",
+    )
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

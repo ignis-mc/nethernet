@@ -1,0 +1,201 @@
+from nethernet.conn import RELIABLE, UNRELIABLE, Conn
+from nethernet.dialer import DialAttempt, DialConfig
+from nethernet.discovery.listener import DiscoveryListener
+from nethernet.discovery.server_data import ServerData
+from nethernet.listener import ListenConfig, Listener
+from nethernet.os.addr import SocketAddr
+from nethernet.os.poll import PollSet
+from nethernet.os.time import monotonic_ms
+from nethernet.wire import bytes_of, string_of
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
+
+comptime LOOPBACK = 0x7F000001
+
+
+def _listener() raises -> Listener[DiscoveryListener]:
+    var discovery = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    discovery.disable_broadcast()
+    var data = ServerData()
+    data.server_name = "loopback"
+    discovery.set_server_data(data)
+    var config = ListenConfig()
+    config.conn.bind_ip = LOOPBACK
+    return Listener[DiscoveryListener](discovery^, config)
+
+
+struct Pair(Movable):
+    """Both ends of one connection."""
+
+    var dialer: Conn
+    var acceptor: Conn
+
+    def __init__(out self, var dialer: Conn, var acceptor: Conn):
+        self.dialer = dialer^
+        self.acceptor = acceptor^
+
+
+def _connect(mut listener: Listener[DiscoveryListener], mut client: DiscoveryListener) raises -> Pair:
+    """Dials the listener from `client` and returns both ends."""
+    var host_id = listener.signaling().id()
+    client.add_peer(host_id, listener.signaling().local_addr(), monotonic_ms())
+    var config = DialConfig()
+    config.conn.bind_ip = LOOPBACK
+    config.timeout_ms = 10000
+    var attempt = DialAttempt(client, String(host_id), config)
+    var accepted: Optional[Conn] = None
+    var deadline = monotonic_ms() + 10000
+    while monotonic_ms() < deadline:
+        var now = monotonic_ms()
+        attempt.poll(client, now)
+        listener.poll(now)
+        if accepted is None:
+            accepted = listener.try_accept()
+        if attempt.is_done() and accepted is not None:
+            break
+        var set = PollSet()
+        _ = set.add(attempt.fd())
+        _ = set.add(client.poll_fd())
+        _ = set.add(listener.signaling().poll_fd())
+        _ = set.wait(5)
+    var dialer_conn = attempt^.finish()
+    assert_true(accepted is not None)
+    return Pair(dialer_conn^, accepted.take())
+
+
+def _pump(mut a: Conn, mut b: Conn, ms: Int) raises:
+    var deadline = monotonic_ms() + ms
+    while monotonic_ms() < deadline:
+        var now = monotonic_ms()
+        a.poll(now)
+        b.poll(now)
+        var set = PollSet()
+        _ = set.add(a.fd())
+        _ = set.add(b.fd())
+        _ = set.wait(2)
+
+
+def _receive(mut conn: Conn, mut other: Conn, timeout_ms: Int, reliability: Int = RELIABLE) raises -> List[UInt8]:
+    var deadline = monotonic_ms() + timeout_ms
+    while monotonic_ms() < deadline:
+        var now = monotonic_ms()
+        conn.poll(now)
+        other.poll(now)
+        var got = conn.receive(reliability)
+        if got is not None:
+            return got.take()
+        var set = PollSet()
+        _ = set.add(conn.fd())
+        _ = set.add(other.fd())
+        _ = set.wait(2)
+    raise Error("no message arrived")
+
+
+def test_dial_accept_and_exchange() raises:
+    var listener = _listener()
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    var pair = _connect(listener, client)
+    assert_true(pair.dialer.is_open())
+    assert_true(pair.acceptor.is_open())
+    assert_equal(pair.dialer.connection_id(), pair.acceptor.connection_id())
+    assert_equal(pair.acceptor.remote_network_id(), client.network_id())
+    assert_true(pair.dialer.remote_addr().value() == pair.acceptor.local_addr())
+
+    var hello = bytes_of("hello from the dialer")
+    pair.dialer.send(Span(hello))
+    var got = _receive(pair.acceptor, pair.dialer, 5000)
+    assert_equal(string_of(Span(got)), "hello from the dialer")
+
+    var reply = bytes_of("hello from the listener")
+    pair.acceptor.send(Span(reply))
+    var got2 = _receive(pair.dialer, pair.acceptor, 5000)
+    assert_equal(string_of(Span(got2)), "hello from the listener")
+
+    # An empty message is not sent at all.
+    var empty = List[UInt8]()
+    pair.dialer.send(Span(empty))
+    _pump(pair.dialer, pair.acceptor, 50)
+    assert_true(pair.acceptor.receive() is None)
+
+    # Unreliable channel.
+    var datagram = bytes_of("best effort")
+    pair.dialer.send(Span(datagram), UNRELIABLE)
+    var got3 = _receive(pair.acceptor, pair.dialer, 5000, UNRELIABLE)
+    assert_equal(string_of(Span(got3)), "best effort")
+
+    # Messages keep their order and boundaries.
+    for i in range(200):
+        var msg = List[UInt8](length=1 + (i * 37) % 900, fill=UInt8(i))
+        pair.dialer.send(Span(msg))
+    for i in range(200):
+        var m = _receive(pair.acceptor, pair.dialer, 5000)
+        assert_equal(len(m), 1 + (i * 37) % 900)
+        assert_equal(m[0], UInt8(i))
+    assert_true(pair.dialer.latency_ms() >= 0)
+
+
+def test_large_message_is_segmented() raises:
+    var listener = _listener()
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    var pair = _connect(listener, client)
+    # Larger than one segment (262143 bytes): three segments.
+    var size = 600_000
+    var big = List[UInt8](capacity=size)
+    for i in range(size):
+        big.append(UInt8((i * 7 + i // 251) & 0xFF))
+    pair.acceptor.send(Span(big))
+    var got = _receive(pair.dialer, pair.acceptor, 30000)
+    assert_equal(len(got), size)
+    var same = True
+    for i in range(size):
+        if got[i] != big[i]:
+            same = False
+    assert_true(same)
+
+
+def test_close_is_seen_by_peer() raises:
+    var listener = _listener()
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    var pair = _connect(listener, client)
+    var last = bytes_of("last words")
+    pair.dialer.send(Span(last))
+    _pump(pair.dialer, pair.acceptor, 100)
+    pair.dialer.close(0)
+    assert_true(pair.dialer.is_closed())
+    _pump(pair.dialer, pair.acceptor, 200)
+    assert_true(pair.acceptor.is_closed())
+    # Data received before the close is still readable.
+    var got = pair.acceptor.receive()
+    assert_equal(string_of(Span(got.value())), "last words")
+    var raised = False
+    try:
+        pair.acceptor.send(Span(last))
+    except:
+        raised = True
+    assert_true(raised)
+
+
+def test_two_connections_at_once() raises:
+    var listener = _listener()
+    var client_a = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client_a.disable_broadcast()
+    var client_b = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client_b.disable_broadcast()
+    var pair_a = _connect(listener, client_a)
+    var pair_b = _connect(listener, client_b)
+    var msg_a = bytes_of("from a")
+    var msg_b = bytes_of("from b")
+    pair_a.dialer.send(Span(msg_a))
+    pair_b.dialer.send(Span(msg_b))
+    var got_a = _receive(pair_a.acceptor, pair_a.dialer, 5000)
+    var got_b = _receive(pair_b.acceptor, pair_b.dialer, 5000)
+    assert_equal(string_of(Span(got_a)), "from a")
+    assert_equal(string_of(Span(got_b)), "from b")
+    assert_false(pair_a.acceptor.remote_network_id() == pair_b.acceptor.remote_network_id())
+    assert_equal(listener.pending_count(), 0)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()
