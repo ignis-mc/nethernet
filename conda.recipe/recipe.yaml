@@ -1,0 +1,49 @@
+# rattler-build recipe for the modular-community conda channel.
+#
+# This is a template that has not been built yet. Before publishing a
+# release, set `version`, replace `rev` with the full SHA of the tagged
+# commit, and run `rattler-build build --recipe conda.recipe/recipe.yaml
+# -c conda-forge -c https://conda.modular.com/max`. See CONTRIBUTING.md.
+context:
+  version: "0.1.0"
+
+package:
+  name: nethernet
+  version: ${{ version }}
+
+source:
+  - git: https://github.com/ignis-mc/nethernet.git
+    rev: 0000000000000000000000000000000000000000
+
+build:
+  number: 0
+  script:
+    - mojo precompile src/nethernet -o ${{ PREFIX }}/lib/mojo/nethernet.mojoc
+
+requirements:
+  build:
+    - mojo-compiler =1.2.0
+  host:
+    - mojo-compiler =1.2.0
+  run:
+    - ${{ pin_compatible('mojo-compiler') }}
+
+tests:
+  - script:
+      - if: linux
+        then:
+          - mojo run test/nethernet/test_wire.mojo
+    files:
+      source:
+        - test/nethernet/test_wire.mojo
+
+about:
+  homepage: https://github.com/ignis-mc/nethernet
+  repository: https://github.com/ignis-mc/nethernet
+  license: MIT
+  license_file: LICENSE
+  summary: NetherNet, Minecraft Bedrock's WebRTC data-channel transport, in pure Mojo.
+
+extra:
+  maintainers:
+    - RestartFU
