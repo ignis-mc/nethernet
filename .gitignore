@@ -1,0 +1,16 @@
+# pixi environments
+.pixi
+*.egg-info
+
+# build outputs
+build/
+*.mojoc
+output/
+
+# Go interop harness binaries
+interop/go/bin/
+
+# editor and OS noise
+.vscode/
+.idea/
+.DS_Store
