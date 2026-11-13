@@ -219,6 +219,8 @@ struct Association(Movable):
         s.abandoned_chunks = self._sender.abandoned_chunks
         s.data_chunks_out = self._sender.data_chunks_out
         s.forward_tsns_out = self._sender.forward_tsns_out
+        s.loss_probes = self._sender.loss_probes
+        s.rack_losses = self._sender.rack_losses
         return s
 
     def buffered_amount(self) -> Int:
@@ -376,7 +378,13 @@ struct Association(Movable):
         var best: Optional[Int] = None
         if self._ended:
             return best
-        for t in [self._t1, self._sender.t3, self._t2, self._reset.timer]:
+        for t in [
+            self._t1,
+            self._sender.t3,
+            self._sender.probe,
+            self._t2,
+            self._reset.timer,
+        ]:
             if t.armed and (not best or t.deadline < best.or_else(0)):
                 best = t.deadline
         return best
@@ -394,6 +402,8 @@ struct Association(Movable):
         if not self._ended and self._sender.t3.expired(now_ms):
             if self._count_error():
                 self._sender.on_t3_expired(now_ms)
+        if not self._ended and self._sender.probe.expired(now_ms):
+            self._sender.on_probe_expired(now_ms)
         if not self._ended and self._t2.expired(now_ms):
             if self._count_error():
                 self._sender.rto.backoff()

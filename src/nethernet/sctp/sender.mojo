@@ -5,6 +5,13 @@ flight. It implements the transmission rules of RFC 9260 sections 6 and 7
 (receiver window, congestion window with slow start and congestion
 avoidance, T3-rtx with exponential backoff, fast retransmit) and the
 limited-retransmission policy of RFC 3758 with FORWARD-TSN.
+
+On top of fast retransmit it detects losses the way RACK-TLP does for TCP
+(RFC 8985), as pion's SCTP does: a chunk is lost once a chunk transmitted
+after it is acknowledged, and a tail that goes unacknowledged for about two
+round trips is probed by resending its last chunk. Request/response traffic
+ends every message in such a tail, where waiting for three missing reports
+or for T3-rtx (at least a second, doubling) stalls the connection.
 """
 
 from std.collections import Deque
@@ -13,6 +20,7 @@ from .chunk import (
     DATA_CHUNK_OVERHEAD,
     DATA_FLAG_BEGIN,
     DATA_FLAG_END,
+    DATA_FLAG_IMMEDIATE,
     DATA_FLAG_UNORDERED,
     ForwardTsnChunk,
     SackChunk,
@@ -23,6 +31,8 @@ from .serial import ssn_lt, tsn_ge, tsn_gt, tsn_le, tsn_lt
 from .timer import RtoEstimator, Timer
 
 comptime _FAST_RETRANSMIT_THRESHOLD = 3
+comptime _PROBE_SLACK_MS = 10
+"""Added to two smoothed round trips for the tail loss probe timeout."""
 
 
 struct _OutMessage(Copyable):
@@ -70,6 +80,8 @@ struct _OutChunk(Copyable):
     var fast: Bool
     var fast_done: Bool
     var miss_count: Int
+    var xmit_seq: Int
+    """Order of the latest transmission among all transmissions."""
 
     def __init__(
         out self,
@@ -97,6 +109,7 @@ struct _OutChunk(Copyable):
         self.fast = False
         self.fast_done = False
         self.miss_count = 0
+        self.xmit_seq = 0
 
 
 def initial_cwnd(mtu: Int) -> Int:
@@ -142,6 +155,8 @@ struct Sender(Movable):
     """The retransmission timeout estimator."""
     var t3: Timer
     """The T3-rtx timer; armed whenever a TSN awaits its cumulative ack."""
+    var probe: Timer
+    """The loss detection timer: tail loss probe and RACK reorder wait."""
     var progress: Bool
     """Whether the last SACK acknowledged anything new."""
     var retransmits: Int
@@ -156,6 +171,10 @@ struct Sender(Movable):
     """DATA chunks sent for the first time."""
     var forward_tsns_out: Int
     """FORWARD-TSN chunks written."""
+    var loss_probes: Int
+    """Tail loss probes sent."""
+    var rack_losses: Int
+    """DATA chunks found lost because a later transmission was acked."""
 
     var _mtu: Int
     var _fragment_size: Int
@@ -180,6 +199,9 @@ struct Sender(Movable):
     var _forward_needed: Bool
     var _blocked: Dict[UInt16, Bool]
     var _reset_ready: List[UInt16]
+    var _xmit_seq: Int
+    var _rack_seq: Int
+    var _probe_sent: Bool
 
     def __init__(
         out self,
@@ -200,6 +222,7 @@ struct Sender(Movable):
         """
         self.rto = RtoEstimator(rto_initial_ms, rto_min_ms, rto_max_ms)
         self.t3 = Timer()
+        self.probe = Timer()
         self.progress = False
         self.retransmits = 0
         self.fast_retransmits = 0
@@ -207,6 +230,8 @@ struct Sender(Movable):
         self.abandoned_chunks = 0
         self.data_chunks_out = 0
         self.forward_tsns_out = 0
+        self.loss_probes = 0
+        self.rack_losses = 0
         self._mtu = mtu
         self._fragment_size = fragment_size_for_mtu(mtu)
         self._next_tsn = initial_tsn
@@ -230,6 +255,9 @@ struct Sender(Movable):
         self._forward_needed = False
         self._blocked = Dict[UInt16, Bool]()
         self._reset_ready = List[UInt16]()
+        self._xmit_seq = 0
+        self._rack_seq = 0
+        self._probe_sent = False
 
     def set_peer(mut self, a_rwnd: UInt32, forward_tsn: Bool):
         """Records what the peer announced in its INIT or INIT ACK.
@@ -523,6 +551,7 @@ struct Sender(Movable):
         var acked_bytes = 0
         var rtt = -1
         var newly_acked = False
+        var newest_xmit = 0
         while len(self._inflight) > 0 and tsn_le(
             self._inflight[0].tsn, sack.cumulative_tsn
         ):
@@ -531,6 +560,10 @@ struct Sender(Movable):
             newly_acked = True
             if c.abandoned:
                 continue
+            # Only a chunk sent once says unambiguously which transmission
+            # arrived.
+            if not c.acked and c.sent_count == 1 and c.xmit_seq > newest_xmit:
+                newest_xmit = c.xmit_seq
             self._inflight_bytes -= size
             if c.retransmit:
                 self._marked -= 1
@@ -566,6 +599,11 @@ struct Sender(Movable):
                 have_highest = True
                 if self._inflight[i].abandoned:
                     continue
+                if (
+                    self._inflight[i].sent_count == 1
+                    and self._inflight[i].xmit_seq > newest_xmit
+                ):
+                    newest_xmit = self._inflight[i].xmit_seq
                 if self._inflight[i].retransmit:
                     self._inflight[i].retransmit = False
                     self._inflight[i].fast = False
@@ -594,6 +632,12 @@ struct Sender(Movable):
                     self._mark_for_retransmit(i, True)
                     self._enter_fast_recovery()
 
+        if newest_xmit > self._rack_seq:
+            self._rack_seq = newest_xmit
+        _ = self._rack_detect(now_ms)
+        if newly_acked:
+            self._probe_sent = False
+
         if acked_bytes > 0 and not self._fast_recovery:
             if self._cwnd <= self._ssthresh:
                 if self._cwnd_limited:
@@ -621,7 +665,91 @@ struct Sender(Movable):
             self.t3.start(now_ms + self.rto.rto())
         self._update_forward_point()
         self.progress = newly_acked or advanced
+        self._arm_probe(now_ms)
         return True
+
+    def _rack_detect(mut self, now_ms: Int) -> Int:
+        # A chunk transmitted before the newest acknowledged transmission is
+        # lost once it is older than the reordering window (RFC 8985 6.2).
+        var reorder = self.rto.srtt() // 4
+        var found = 0
+        var n = len(self._inflight)
+        for i in range(n):
+            if self._inflight[i].xmit_seq >= self._rack_seq:
+                continue
+            if (
+                self._inflight[i].acked
+                or self._inflight[i].abandoned
+                or self._inflight[i].retransmit
+            ):
+                continue
+            if now_ms - self._inflight[i].sent_at < reorder:
+                continue
+            self._mark_for_retransmit(i, True)
+            self.rack_losses += 1
+            found += 1
+        if found > 0:
+            self._enter_fast_recovery()
+        return found
+
+    def _arm_probe(mut self, now_ms: Int):
+        if self._outstanding <= 0:
+            self.probe.stop()
+            return
+        var deadline = -1
+        if not self._probe_sent:
+            deadline = now_ms + 2 * self.rto.srtt() + _PROBE_SLACK_MS
+        var reorder = self.rto.srtt() // 4
+        if reorder > 0:
+            # Wake when a chunk RACK already suspects leaves the window.
+            for i in range(len(self._inflight)):
+                if (
+                    self._inflight[i].xmit_seq >= self._rack_seq
+                    or self._inflight[i].acked
+                    or self._inflight[i].abandoned
+                    or self._inflight[i].retransmit
+                ):
+                    continue
+                var at = self._inflight[i].sent_at + reorder
+                if deadline < 0 or at < deadline:
+                    deadline = at
+        if deadline < 0 or (self.t3.armed and deadline >= self.t3.deadline):
+            self.probe.stop()
+            return
+        self.probe.start(deadline)
+
+    def on_probe_expired(mut self, now_ms: Int):
+        """Handles an expiry of the loss detection timer.
+
+        Marks the chunks RACK now judges lost or, if there are none and the
+        tail has not been probed since the last acknowledgement, marks the
+        highest unacknowledged chunk for one retransmission that bypasses
+        the congestion window. Neither backs off the timeout.
+
+        Args:
+            now_ms: The current time in milliseconds.
+        """
+        self.probe.stop()
+        if self._rack_detect(now_ms) > 0 or self._probe_sent:
+            return
+        var i = len(self._inflight) - 1
+        while i >= 0:
+            if not (
+                self._inflight[i].acked
+                or self._inflight[i].abandoned
+                or self._inflight[i].retransmit
+                or self._should_abandon(i)
+            ):
+                break
+            i -= 1
+        if i < 0:
+            return
+        self._outstanding -= len(self._inflight[i].payload)
+        self._inflight[i].retransmit = True
+        self._inflight[i].fast = True
+        self._marked += 1
+        self._probe_sent = True
+        self.loss_probes += 1
 
     def on_t3_expired(mut self, now_ms: Int):
         """Handles an expiry of the T3-rtx timer.
@@ -634,6 +762,8 @@ struct Sender(Movable):
             now_ms: The current time in milliseconds.
         """
         self.t3_expiries += 1
+        self.probe.stop()
+        self._probe_sent = False
         self._ssthresh = self._cwnd // 2
         if self._ssthresh < 4 * self._mtu:
             self._ssthresh = 4 * self._mtu
@@ -699,6 +829,14 @@ struct Sender(Movable):
         Raises:
             Error: If the internal bookkeeping is inconsistent.
         """
+        var added = self._fill(out, limit, now_ms)
+        if added > 0:
+            self._arm_probe(now_ms)
+        return added
+
+    def _fill(
+        mut self, mut out: List[UInt8], limit: Int, now_ms: Int
+    ) raises -> Int:
         var added = 0
         if self._forward_needed and tsn_gt(self._adv_ack, self._cum_ack):
             if not self._write_forward_tsn(out, limit):
@@ -738,6 +876,8 @@ struct Sender(Movable):
                 self._inflight[i].fast = False
                 self._inflight[i].sent_count += 1
                 self._inflight[i].sent_at = now_ms
+                self._xmit_seq += 1
+                self._inflight[i].xmit_seq = self._xmit_seq
                 self._outstanding += len(self._inflight[i].payload)
                 self._marked -= 1
                 self.retransmits += 1
@@ -779,6 +919,11 @@ struct Sender(Movable):
                     self._next_ssn[stream_id] = ssn + 1
             if frag == remaining:
                 flags |= DATA_FLAG_END
+                if len(self._pending) == 1:
+                    # The last chunk for now: ask for a SACK at once (RFC
+                    # 7053) rather than after the peer's delayed-ack timer,
+                    # so the tail loss probe can stay short.
+                    flags |= DATA_FLAG_IMMEDIATE
             var chunk = _OutChunk(
                 self._next_tsn,
                 stream_id,
@@ -789,6 +934,8 @@ struct Sender(Movable):
                 self._pending[0].max_retransmits,
                 now_ms,
             )
+            self._xmit_seq += 1
+            chunk.xmit_seq = self._xmit_seq
             encode_data(
                 out,
                 chunk.tsn,
@@ -834,3 +981,5 @@ struct Sender(Movable):
         self._marked = 0
         self._forward_needed = False
         self.t3.stop()
+        self.probe.stop()
+        self._probe_sent = False

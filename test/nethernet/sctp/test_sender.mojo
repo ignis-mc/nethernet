@@ -261,43 +261,88 @@ def test_t3_backoff_and_window_collapse() raises:
     assert_equal(r.data[0].tsn, 2)
 
 
-def test_fast_retransmit_after_three_missing_reports() raises:
+def test_loss_is_detected_once_a_later_chunk_is_acked() raises:
     var s = _sender(10, 1 << 20)
     for _ in range(8):
         _queue(s, 0, 500, False, -1)
     var f = _flush(s, 0)
     assert_equal(len(f.data), 8)
     assert_equal(f.data[0].tsn, 10)
-    # TSN 10 is lost; 11, 12, 13 arrive one by one.
+    # TSN 10 is lost. One SACK for 11 is enough: 11 was transmitted after
+    # 10 (RACK), no need to wait for three missing reports.
     var sack = SackChunk(9, 1 << 20)
     sack.gaps.append(GapBlock(2, 2))
     assert_true(s.on_sack(sack, 20))
-    assert_equal(s.fast_retransmits, 0)
-    sack.gaps[0] = GapBlock(2, 3)
-    assert_true(s.on_sack(sack, 21))
-    assert_equal(s.fast_retransmits, 0)
-    # A duplicate SACK that acks nothing new is not a missing report.
-    assert_true(s.on_sack(sack, 21))
-    assert_equal(s.fast_retransmits, 0)
-    sack.gaps[0] = GapBlock(2, 4)
-    assert_true(s.on_sack(sack, 22))
+    assert_equal(s.rack_losses, 1)
     assert_equal(s.fast_retransmits, 1)
     # ssthresh = max(cwnd / 2, 4 * MTU) and cwnd = ssthresh.
     assert_equal(s.cwnd(), 4800)
-    var r = _flush(s, 22)
+    var r = _flush(s, 20)
     assert_true(len(r.data) >= 1)
     assert_equal(r.data[0].tsn, 10)
     assert_equal(s.retransmits, 1)
     # Further reports for the same TSN do not retransmit it again.
-    sack.gaps[0] = GapBlock(2, 5)
-    assert_true(s.on_sack(sack, 23))
+    for upto in range(3, 6):
+        sack.gaps[0] = GapBlock(2, UInt16(upto))
+        assert_true(s.on_sack(sack, 21))
     assert_equal(s.fast_retransmits, 1)
-    assert_equal(len(_flush(s, 23).data), 0)
+    assert_equal(len(_flush(s, 21).data), 0)
     _ack(s, 17, 30)
     assert_equal(s.t3_expiries, 0)
     assert_true(s.is_drained())
     # The window was not reduced a second time during recovery.
     assert_equal(s.cwnd(), 4800)
+
+
+def test_lost_retransmission_is_found_by_newer_data() raises:
+    var s = _sender(1, 1 << 20)
+    for _ in range(3):
+        _queue(s, 0, 500, False, -1)
+    _ = _flush(s, 0)
+    var sack = SackChunk(0, 1 << 20)
+    sack.gaps.append(GapBlock(2, 3))
+    assert_true(s.on_sack(sack, 10))
+    assert_equal(len(_flush(s, 10).data), 1)
+    # The retransmission of 1 is lost too; new data sent after it arrives.
+    _queue(s, 0, 500, False, -1)
+    var r = _flush(s, 11)
+    assert_equal(r.data[0].tsn, 4)
+    sack.gaps[0] = GapBlock(2, 4)
+    assert_true(s.on_sack(sack, 20))
+    r = _flush(s, 20)
+    assert_equal(len(r.data), 1)
+    assert_equal(r.data[0].tsn, 1)
+    assert_equal(s.rack_losses, 2)
+    assert_equal(s.t3_expiries, 0)
+
+
+def test_tail_loss_probe_resends_the_last_chunk() raises:
+    var s = _sender(1, 1 << 20)
+    _queue(s, 0, 500, False, -1)
+    _queue(s, 0, 500, False, -1)
+    var f = _flush(s, 0)
+    assert_equal(len(f.data), 2)
+    # Only the last chunk of a burst asks for an immediate SACK.
+    assert_equal(Int(f.data[0].flags & 0x08), 0)
+    assert_equal(Int(f.data[1].flags & 0x08), 0x08)
+    # 1 arrives, 2 (the tail) is lost: nothing later can reveal it.
+    _ack(s, 1, 4)
+    assert_true(s.probe.armed)
+    assert_true(s.probe.deadline < s.t3.deadline)
+    var now = s.probe.deadline
+    s.on_probe_expired(now)
+    var r = _flush(s, now)
+    assert_equal(len(r.data), 1)
+    assert_equal(r.data[0].tsn, 2)
+    assert_equal(s.loss_probes, 1)
+    # One probe per tail: without an ack, the next wait is T3-rtx.
+    s.on_probe_expired(now + 100)
+    assert_equal(len(_flush(s, now + 100).data), 0)
+    assert_equal(s.loss_probes, 1)
+    _ack(s, 2, now + 5)
+    assert_true(s.is_drained())
+    assert_false(s.probe.armed)
+    assert_equal(s.t3_expiries, 0)
 
 
 def test_gap_acked_chunks_are_not_retransmitted_by_fast_retransmit() raises:
