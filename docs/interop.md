@@ -39,7 +39,8 @@ cleanly.
 
 Within each group: with identity assertions (the strict default on both
 libraries), anonymous with the listener allowing it, anonymous rejected with
-error 37, the listener closing first, and three dialers at once. Message
+error 37, the listener closing first, a large write followed immediately by
+close (which must still be delivered), and three dialers at once. Message
 sizes include 1160 and 1161 bytes (pion's SCTP fragmentation boundary),
 262143 and 262144 bytes (the NetherNet segment boundary) and 600000 bytes
 (three segments).

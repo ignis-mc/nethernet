@@ -60,9 +60,9 @@ struct Hmac[H: Hash](Copyable):
         return self._outer.finish()
 
 
-def hmac[H: Hash](
-    key: Span[UInt8, _], message: Span[UInt8, _]
-) -> Array[UInt8, H.DIGEST_SIZE]:
+def hmac[
+    H: Hash
+](key: Span[UInt8, _], message: Span[UInt8, _]) -> Array[UInt8, H.DIGEST_SIZE]:
     """Computes HMAC of `message` under `key`.
 
     Parameters:

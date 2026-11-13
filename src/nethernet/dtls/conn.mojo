@@ -489,7 +489,9 @@ struct DtlsConn(Movable):
             return
         var plain: List[UInt8]
         try:
-            plain = self._read_cipher.value().open(content_type, epoch, seq, body)
+            plain = self._read_cipher.value().open(
+                content_type, epoch, seq, body
+            )
         except:
             return
         self._replay.mark(seq)
@@ -505,8 +507,13 @@ struct DtlsConn(Movable):
         if content_type == CT_HANDSHAKE:
             self._on_handshake_record(body, now_ms)
         elif content_type == CT_CHANGE_CIPHER_SPEC:
-            if epoch == 0 and self._pending_read_cipher is not None and (
-                self._step == _C_WAIT_FINISHED or self._step == _S_WAIT_FINISHED
+            if (
+                epoch == 0
+                and self._pending_read_cipher is not None
+                and (
+                    self._step == _C_WAIT_FINISHED
+                    or self._step == _S_WAIT_FINISHED
+                )
             ):
                 self._read_cipher = self._pending_read_cipher.take()
                 self._read_epoch = 1
@@ -648,7 +655,11 @@ struct DtlsConn(Movable):
         return copy.finish()
 
     def _on_message(
-        mut self, msg_type: UInt8, message_seq: Int, body: Span[UInt8, _], now_ms: Int
+        mut self,
+        msg_type: UInt8,
+        message_seq: Int,
+        body: Span[UInt8, _],
+        now_ms: Int,
     ) raises:
         if self._config.is_client:
             self._on_message_client(msg_type, message_seq, body, now_ms)
@@ -656,7 +667,11 @@ struct DtlsConn(Movable):
             self._on_message_server(msg_type, message_seq, body, now_ms)
 
     def _on_message_client(
-        mut self, msg_type: UInt8, message_seq: Int, body: Span[UInt8, _], now_ms: Int
+        mut self,
+        msg_type: UInt8,
+        message_seq: Int,
+        body: Span[UInt8, _],
+        now_ms: Int,
     ) raises:
         if self._step == _C_WAIT_SERVER_HELLO:
             if msg_type == HS_HELLO_VERIFY_REQUEST:
@@ -682,7 +697,9 @@ struct DtlsConn(Movable):
             self._step = _C_WAIT_SERVER_KEY_EXCHANGE
         elif self._step == _C_WAIT_SERVER_KEY_EXCHANGE:
             if msg_type != HS_SERVER_KEY_EXCHANGE:
-                raise Error("dtls: unexpected message, wanted ServerKeyExchange")
+                raise Error(
+                    "dtls: unexpected message, wanted ServerKeyExchange"
+                )
             var ske = ServerKeyExchange.decode(body)
             if ske.named_curve != GROUP_SECP256R1:
                 raise Error("dtls: unsupported key exchange group")
@@ -719,7 +736,11 @@ struct DtlsConn(Movable):
             raise Error("dtls: unexpected handshake message")
 
     def _on_message_server(
-        mut self, msg_type: UInt8, message_seq: Int, body: Span[UInt8, _], now_ms: Int
+        mut self,
+        msg_type: UInt8,
+        message_seq: Int,
+        body: Span[UInt8, _],
+        now_ms: Int,
     ) raises:
         if self._step == _S_WAIT_CLIENT_HELLO:
             if msg_type != HS_CLIENT_HELLO:
@@ -758,15 +779,21 @@ struct DtlsConn(Movable):
             self._step = _S_WAIT_CLIENT_KEY_EXCHANGE
         elif self._step == _S_WAIT_CLIENT_KEY_EXCHANGE:
             if msg_type != HS_CLIENT_KEY_EXCHANGE:
-                raise Error("dtls: unexpected message, wanted ClientKeyExchange")
+                raise Error(
+                    "dtls: unexpected message, wanted ClientKeyExchange"
+                )
             var peer_public = decode_client_key_exchange(body)
             self._transcript_add(msg_type, message_seq, body)
-            var premaster = p256_ecdh(Span(self._ecdh_private), Span(peer_public))
+            var premaster = p256_ecdh(
+                Span(self._ecdh_private), Span(peer_public)
+            )
             self._derive_keys(Span(premaster))
             self._step = _S_WAIT_CERTIFICATE_VERIFY
         elif self._step == _S_WAIT_CERTIFICATE_VERIFY:
             if msg_type != HS_CERTIFICATE_VERIFY:
-                raise Error("dtls: unexpected message, wanted CertificateVerify")
+                raise Error(
+                    "dtls: unexpected message, wanted CertificateVerify"
+                )
             var cv = CertificateVerify.decode(body)
             if cv.signature_algorithm != SIG_ECDSA_SHA256:
                 raise Error("dtls: unsupported signature algorithm")
@@ -985,7 +1012,9 @@ struct DtlsConn(Movable):
         self._queue_handshake(HS_CLIENT_HELLO, Span(body), False)
         self._emit_flight(now_ms)
 
-    def _send_server_hello_flight(mut self, ch: ClientHello, now_ms: Int) raises:
+    def _send_server_hello_flight(
+        mut self, ch: ClientHello, now_ms: Int
+    ) raises:
         self._begin_flight()
         var sh = ServerHello()
         sh.random = self._local_random.copy()
@@ -1077,7 +1106,9 @@ struct DtlsConn(Movable):
             except:
                 return
         else:
-            put_plain_record(datagram, CT_ALERT, 0, self._write_seq0, Span(body))
+            put_plain_record(
+                datagram, CT_ALERT, 0, self._write_seq0, Span(body)
+            )
             self._write_seq0 += 1
         self._out.append(datagram^)
 

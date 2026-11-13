@@ -49,6 +49,9 @@ func main() {
 	}
 }
 
+// dialStarted is when the dial began, for the connect time in the log.
+var dialStarted time.Time
+
 func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "interop: "+format+"\n", args...)
 	os.Exit(1)
@@ -95,6 +98,7 @@ func listen(args []string) {
 	networkID := fs.Uint64("network-id", 0, "network ID (0 picks a random one)")
 	anonymous := fs.Bool("anonymous", false, "accept offers without an identity")
 	conns := fs.Int("conns", 1, "exit after this many connections have closed")
+	expectLast := fs.Int("expect-last", 0, "fail unless each connection's last message has this many bytes")
 	timeout := fs.Duration("timeout", 60*time.Second, "overall time limit")
 	verbose := fs.Bool("v", false, "debug logging")
 	_ = fs.Parse(args)
@@ -138,15 +142,20 @@ func listen(args []string) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			echo(conn)
-			fmt.Println("CLOSED")
+			last := echo(conn)
+			fmt.Printf("CLOSED last message %d\n", last)
+			if *expectLast > 0 && last != *expectLast {
+				fatalf("last message had %d bytes, expected %d", last, *expectLast)
+			}
 		}()
 	}
 	wg.Wait()
 	fmt.Println("DONE")
 }
 
-func echo(conn *nethernet.Conn) {
+// echo sends every message back and returns the size of the last one read.
+func echo(conn *nethernet.Conn) int {
+	last := 0
 	go func() {
 		for {
 			b, err := conn.Receive(nethernet.MessageReliabilityUnreliable)
@@ -161,14 +170,17 @@ func echo(conn *nethernet.Conn) {
 	for {
 		b, err := conn.ReadPacket()
 		if err != nil {
-			return
+			return last
 		}
+		last = len(b)
 		if bytes.Equal(b, []byte("BYE")) {
 			_ = conn.Close()
-			return
+			return last
 		}
 		if _, err := conn.Write(b); err != nil {
-			return
+			// The peer may have closed right after writing; keep draining
+			// what it sent before that.
+			continue
 		}
 	}
 }
@@ -184,6 +196,7 @@ func dial(args []string) {
 	withIdentity := fs.Bool("identity", false, "attach a self-signed client identity to the offer")
 	expectFail := fs.Bool("expect-fail", false, "succeed only if the dial is rejected")
 	bye := fs.Bool("bye", false, "ask the listener to close instead of closing first")
+	closeAfterWrite := fs.Int("close-after-write", 0, "finally send this many bytes and close without waiting")
 	timeout := fs.Duration("timeout", 60*time.Second, "overall time limit")
 	verbose := fs.Bool("v", false, "debug logging")
 	_ = fs.Parse(args)
@@ -228,6 +241,7 @@ func dial(args []string) {
 	if *withIdentity {
 		dialer.Identity = newIdentity()
 	}
+	dialStarted = time.Now()
 	conn, err := dialer.DialContext(ctx, strconv.FormatUint(networkID, 10), d)
 	if *expectFail {
 		if err == nil {
@@ -240,12 +254,12 @@ func dial(args []string) {
 	if err != nil {
 		fatalf("dial: %v", err)
 	}
-	exercise(conn, parseSizes(*sizes), *unreliable, *bye)
+	exercise(conn, parseSizes(*sizes), *unreliable, *bye, *closeAfterWrite)
 }
 
 // exercise checks echoes on an open connection and then closes it.
-func exercise(conn *nethernet.Conn, sizes []int, unreliable int, bye bool) {
-	fmt.Printf("CONNECTED %s\n", conn.RemoteAddr())
+func exercise(conn *nethernet.Conn, sizes []int, unreliable int, bye bool, closeAfterWrite int) {
+	fmt.Printf("CONNECTED %s in %v\n", conn.RemoteAddr(), time.Since(dialStarted).Round(time.Millisecond))
 
 	for _, size := range sizes {
 		want := payload(size)
@@ -295,6 +309,19 @@ func exercise(conn *nethernet.Conn, sizes []int, unreliable int, bye bool) {
 		fmt.Printf("UNRELIABLE %d\n", received)
 	}
 
+	if closeAfterWrite > 0 {
+		// Write and close at once: Close must still deliver the message.
+		if _, err := conn.Write(payload(closeAfterWrite)); err != nil {
+			fatalf("final write: %v", err)
+		}
+		if err := conn.Close(); err != nil {
+			fatalf("close: %v", err)
+		}
+		fmt.Printf("WROTE_AND_CLOSED %d\n", closeAfterWrite)
+		fmt.Println("OK")
+		return
+	}
+
 	if bye {
 		if _, err := conn.Write([]byte("BYE")); err != nil {
 			fatalf("write BYE: %v", err)
@@ -334,6 +361,7 @@ func httpListen(args []string) {
 	bind := fs.String("bind", "127.0.0.1:19132", "HTTP address to bind (the port must be explicit)")
 	anonymous := fs.Bool("anonymous", false, "accept offers without an identity")
 	conns := fs.Int("conns", 1, "exit after this many connections have closed")
+	expectLast := fs.Int("expect-last", 0, "fail unless each connection's last message has this many bytes")
 	timeout := fs.Duration("timeout", 60*time.Second, "overall time limit")
 	verbose := fs.Bool("v", false, "debug logging")
 	_ = fs.Parse(args)
@@ -367,8 +395,11 @@ func httpListen(args []string) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			echo(conn)
-			fmt.Println("CLOSED")
+			last := echo(conn)
+			fmt.Printf("CLOSED last message %d\n", last)
+			if *expectLast > 0 && last != *expectLast {
+				fatalf("last message had %d bytes, expected %d", last, *expectLast)
+			}
 		}()
 	}
 	wg.Wait()
@@ -387,6 +418,7 @@ func httpDial(args []string) {
 	withIdentity := fs.Bool("identity", false, "attach a self-signed client identity to the offer")
 	expectFail := fs.Bool("expect-fail", false, "succeed only if the dial is rejected")
 	bye := fs.Bool("bye", false, "ask the listener to close instead of closing first")
+	closeAfterWrite := fs.Int("close-after-write", 0, "finally send this many bytes and close without waiting")
 	timeout := fs.Duration("timeout", 60*time.Second, "overall time limit")
 	verbose := fs.Bool("v", false, "debug logging")
 	_ = fs.Parse(args)
@@ -434,6 +466,7 @@ func httpDial(args []string) {
 	if *withIdentity {
 		dialer.Identity = newIdentity()
 	}
+	dialStarted = time.Now()
 	conn, err := dialer.DialContext(ctx, *url, client)
 	if *expectFail {
 		if err == nil {
@@ -446,5 +479,5 @@ func httpDial(args []string) {
 	if err != nil {
 		fatalf("dial: %v", err)
 	}
-	exercise(conn, parseSizes(*sizes), *unreliable, *bye)
+	exercise(conn, parseSizes(*sizes), *unreliable, *bye, *closeAfterWrite)
 }

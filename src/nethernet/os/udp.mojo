@@ -91,7 +91,9 @@ struct UdpSocket(Movable):
             self._fd, SOL_SOCKET, SO_BROADCAST, Int32(1 if enabled else 0)
         )
 
-    def send_to(self, data: Span[UInt8, _], dest: SocketAddr) raises Errno -> Bool:
+    def send_to(
+        self, data: Span[UInt8, _], dest: SocketAddr
+    ) raises Errno -> Bool:
         """Sends one datagram.
 
         Args:

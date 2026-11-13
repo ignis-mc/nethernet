@@ -152,7 +152,9 @@ struct ChannelOpen(Copyable):
         var protocol = r.bytes(protocol_len)
         if not r.at_end():
             raise Error("DCEP: trailing bytes after DATA_CHANNEL_OPEN")
-        var open = ChannelOpen(channel_type, reliability, String(from_utf8=label))
+        var open = ChannelOpen(
+            channel_type, reliability, String(from_utf8=label)
+        )
         open.priority = priority
         open.protocol = String(from_utf8=protocol)
         return open^

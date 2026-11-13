@@ -118,7 +118,9 @@ def main() raises:
     t0 = monotonic_ns()
     while received < MESSAGES:
         # Keep a few megabytes in flight without queueing everything at once.
-        while sent < MESSAGES and pair.dialer.buffered_amount() < 4 * 1024 * 1024:
+        while (
+            sent < MESSAGES and pair.dialer.buffered_amount() < 4 * 1024 * 1024
+        ):
             pair.dialer.send(Span(block))
             sent += 1
         step(pair, 0)

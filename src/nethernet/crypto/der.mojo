@@ -85,7 +85,9 @@ def der_next[o: ImmOrigin](mut r: Reader[o]) raises -> DerValue[o]:
     return DerValue[o](tag, r.bytes(length))
 
 
-def der_expect[o: ImmOrigin](mut r: Reader[o], tag: UInt8) raises -> Span[UInt8, o]:
+def der_expect[
+    o: ImmOrigin
+](mut r: Reader[o], tag: UInt8) raises -> Span[UInt8, o]:
     """Reads the next TLV and checks its tag.
 
     Parameters:

@@ -1,4 +1,8 @@
-from nethernet.ice.candidate import ICE_HOST_PRIORITY, IceCandidate, parse_candidate
+from nethernet.ice.candidate import (
+    ICE_HOST_PRIORITY,
+    IceCandidate,
+    parse_candidate,
+)
 from nethernet.os.addr import SocketAddr
 from std.testing import TestSuite, assert_equal, assert_raises, assert_true
 
@@ -14,7 +18,10 @@ def test_parse_minimal() raises:
 
 
 def test_parse_prefixed_and_extensions() raises:
-    var line = "candidate:3288563104 1 udp 2130706431 10.0.0.5 51234 typ host generation 0 ufrag AbCd network-id 0 network-cost 0"
+    var line = (
+        "candidate:3288563104 1 udp 2130706431 10.0.0.5 51234 typ host"
+        " generation 0 ufrag AbCd network-id 0 network-cost 0"
+    )
     var c = parse_candidate(line)
     assert_equal(c.foundation, "3288563104")
     assert_equal(String(c.addr), "10.0.0.5:51234")
@@ -26,7 +33,8 @@ def test_parse_prefixed_and_extensions() raises:
 
 def test_parse_srflx_with_related() raises:
     var c = parse_candidate(
-        "candidate:842163049 1 UDP 1694498815 203.0.113.7 3478 typ srflx raddr 192.168.1.2 rport 50000 generation 0"
+        "candidate:842163049 1 UDP 1694498815 203.0.113.7 3478 typ srflx raddr"
+        " 192.168.1.2 rport 50000 generation 0"
     )
     assert_equal(c.kind, "srflx")
     assert_equal(String(c.related.value()), "192.168.1.2:50000")
@@ -55,9 +63,12 @@ def test_host_round_trip() raises:
     var c = IceCandidate.host(SocketAddr.v4(192, 168, 1, 20, 45000))
     assert_equal(c.priority, ICE_HOST_PRIORITY)
     var value = c.attribute_value("ufragXYZ", 0)
-    assert_true(value.endswith(
-        " 1 udp 2130706431 192.168.1.20 45000 typ host generation 0 ufrag ufragXYZ network-id 0 network-cost 0"
-    ))
+    assert_true(
+        value.endswith(
+            " 1 udp 2130706431 192.168.1.20 45000 typ host generation 0 ufrag"
+            " ufragXYZ network-id 0 network-cost 0"
+        )
+    )
     var signal = c.signal_value("ufragXYZ", 2)
     assert_true(signal.startswith("candidate:"))
     assert_true(signal.endswith("network-id 2 network-cost 0"))

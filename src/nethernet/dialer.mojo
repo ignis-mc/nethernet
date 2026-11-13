@@ -71,7 +71,9 @@ struct DialAttempt(Movable):
     var _error: String
     var _allow_identityless_server: Bool
 
-    def __init__[S: Signaling](
+    def __init__[
+        S: Signaling
+    ](
         out self, mut signaling: S, network_id: StringSpan, config: DialConfig
     ) raises:
         """Creates the connection and signals the offer.
@@ -115,7 +117,9 @@ struct DialAttempt(Movable):
         var trickle = signaling.trickle()
         var offer = self._conn.local_description(not trickle)
         signaling.send_signal(
-            Signal(SIGNAL_OFFER, self._connection_id, offer.encode(), network_id)
+            Signal(
+                SIGNAL_OFFER, self._connection_id, offer.encode(), network_id
+            )
         )
         if trickle:
             signaling.send_signal(
@@ -280,9 +284,9 @@ struct DialAttempt(Movable):
         return self._conn^
 
 
-def dial[S: Signaling](
-    mut signaling: S, network_id: StringSpan, config: DialConfig
-) raises -> Conn:
+def dial[
+    S: Signaling
+](mut signaling: S, network_id: StringSpan, config: DialConfig) raises -> Conn:
     """Connects to the peer with the given network ID, blocking until open.
 
     Parameters:
@@ -309,8 +313,6 @@ def dial[S: Signaling](
         var wait = max(0, min(50, attempt.next_timeout() - monotonic_ms()))
         var set = PollSet()
         _ = set.add(attempt.fd())
-        var signaling_fd = signaling.poll_fd()
-        if signaling_fd >= 0:
-            _ = set.add(signaling_fd)
+        signaling.add_poll_fds(set)
         _ = set.wait(wait)
     return attempt^.finish()

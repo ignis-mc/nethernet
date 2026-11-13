@@ -17,4 +17,4 @@ Initial implementation.
   self-signed certificates, CRC-32, CRC-32C, base64.
 - OS layer: UDP and TCP sockets, `ppoll`, clocks and `getrandom` through raw
   Linux system calls on x86-64 and aarch64.
-- Interoperability harness against go-nethernet with 21 cases.
+- Interoperability harness against go-nethernet with 24 cases.

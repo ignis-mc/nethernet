@@ -22,7 +22,13 @@ from nethernet.wire import (
     set_u32,
     string_of,
 )
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 
 def test_put_and_read_big_endian() raises:
@@ -33,7 +39,10 @@ def test_put_and_read_big_endian() raises:
     put_u32(out, 0x0708090A)
     put_u48(out, 0x0B0C0D0E0F10)
     put_u64(out, 0x1112131415161718)
-    assert_equal(hex_encode(Span(out)), "0102030405060708090a0b0c0d0e0f101112131415161718")
+    assert_equal(
+        hex_encode(Span(out)),
+        "0102030405060708090a0b0c0d0e0f101112131415161718",
+    )
     var r = Reader(Span(out))
     assert_equal(r.u8(), 0x01)
     assert_equal(r.u16(), 0x0203)

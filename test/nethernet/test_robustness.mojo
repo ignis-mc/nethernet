@@ -3,9 +3,16 @@ the network must reject mutated input without crashing."""
 
 from nethernet.crypto.p256 import p256_private_key_from_bytes
 from nethernet.crypto.p384 import p384_private_key_from_bytes
-from nethernet.crypto.x509 import certificate_public_key, self_signed_certificate
+from nethernet.crypto.x509 import (
+    certificate_public_key,
+    self_signed_certificate,
+)
 from nethernet.datachannel.dcep import ChannelOpen
-from nethernet.discovery.packet import DiscoveryPacket, marshal_packet, unmarshal_packet
+from nethernet.discovery.packet import (
+    DiscoveryPacket,
+    marshal_packet,
+    unmarshal_packet,
+)
 from nethernet.discovery.server_data import ServerData
 from nethernet.dtls.conn import (
     DTLS_STATE_CONNECTED,
@@ -18,7 +25,11 @@ from nethernet.ice.agent import IceAgent
 from nethernet.ice.candidate import parse_candidate
 from nethernet.os.addr import SocketAddr
 from nethernet.sdp.description import Description, parse_description
-from nethernet.signaling.identity import IDENTITY_DOMAIN_SERVER, Identity, RemoteIdentity
+from nethernet.signaling.identity import (
+    IDENTITY_DOMAIN_SERVER,
+    Identity,
+    RemoteIdentity,
+)
 from nethernet.signaling.signal import parse_signal
 from nethernet.stun.message import STUN_BINDING_REQUEST, StunBuilder, parse_stun
 from nethernet.wire import bytes_of, string_of
@@ -88,7 +99,9 @@ struct Credentials(Copyable):
 
 def _dtls(is_client: Bool, creds: Credentials, tag: UInt8) -> DtlsConn:
     var random = _seed(tag, 72)
-    return DtlsConn(DtlsConfig(is_client, Span(creds.cert), Span(creds.key), Span(random)))
+    return DtlsConn(
+        DtlsConfig(is_client, Span(creds.cert), Span(creds.key), Span(random))
+    )
 
 
 def _drain(mut conn: DtlsConn) -> List[List[UInt8]]:
@@ -216,7 +229,9 @@ def test_discovery_survives_mutation() raises:
     var packets = List[List[UInt8]]()
     packets.append(marshal_packet(DiscoveryPacket.request(1)))
     packets.append(marshal_packet(DiscoveryPacket.response(2, Span(encoded))))
-    packets.append(marshal_packet(DiscoveryPacket.message(3, 4, "CONNECTREQUEST 1 v=0")))
+    packets.append(
+        marshal_packet(DiscoveryPacket.message(3, 4, "CONNECTREQUEST 1 v=0"))
+    )
     var rng = Rng(19)
     var accepted = 0
     for i in range(3000):
@@ -241,13 +256,21 @@ def test_text_parsers_survive_mutation() raises:
     d.ice_ufrag = "ufragufragufrag"
     d.ice_pwd = "passwordpasswordpasswordpassword"
     d.fingerprint = "AA:BB:CC:DD:AA:BB:CC:DD:AA:BB:CC:DD:AA:BB:CC:DD:AA:BB:CC:DD:AA:BB:CC:DD:AA:BB:CC:DD:AA:BB:CC:DD"
-    d.candidates.append("1 1 udp 2130706431 10.0.0.1 1000 typ host generation 0 ufrag x network-id 0 network-cost 0")
+    d.candidates.append(
+        "1 1 udp 2130706431 10.0.0.1 1000 typ host generation 0 ufrag x"
+        " network-id 0 network-cost 0"
+    )
     var seed = _seed(9, 56)
     var p384_key = p384_private_key_from_bytes(Span(seed))
-    var identity = Identity.self_signed(Span(p384_key), IDENTITY_DOMAIN_SERVER, 1_800_000_000, True)
+    var identity = Identity.self_signed(
+        Span(p384_key), IDENTITY_DOMAIN_SERVER, 1_800_000_000, True
+    )
     d.identity = identity.sign("sha-256", d.fingerprint)
     var sdp = bytes_of(d.encode())
-    var candidate = bytes_of("candidate:1 1 udp 2130706431 10.0.0.1 1000 typ srflx raddr 10.0.0.2 rport 5 generation 0")
+    var candidate = bytes_of(
+        "candidate:1 1 udp 2130706431 10.0.0.1 1000 typ srflx raddr 10.0.0.2"
+        " rport 5 generation 0"
+    )
     var signal = bytes_of("CONNECTERROR 12345 37")
     var assertion = bytes_of(d.identity)
     var rng = Rng(23)

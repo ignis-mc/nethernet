@@ -13,18 +13,26 @@ def test_encode() raises:
     var s = Signal(SIGNAL_OFFER, 18446744073709551615, "v=0\r\n", "peer")
     assert_equal(s.encode(), "CONNECTREQUEST 18446744073709551615 v=0\r\n")
     assert_equal(String(s), "CONNECTREQUEST 18446744073709551615 v=0\r\n")
-    var c = Signal(SIGNAL_CANDIDATE, 7, "candidate:1 1 udp 1 1.2.3.4 5 typ host", "peer")
-    assert_equal(c.encode(), "CANDIDATEADD 7 candidate:1 1 udp 1 1.2.3.4 5 typ host")
+    var c = Signal(
+        SIGNAL_CANDIDATE, 7, "candidate:1 1 udp 1 1.2.3.4 5 typ host", "peer"
+    )
+    assert_equal(
+        c.encode(), "CANDIDATEADD 7 candidate:1 1 udp 1 1.2.3.4 5 typ host"
+    )
 
 
 def test_parse_valid() raises:
-    var s = parse_signal("CONNECTRESPONSE 12345 v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n", "9001")
+    var s = parse_signal(
+        "CONNECTRESPONSE 12345 v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n", "9001"
+    )
     assert_equal(s.kind, SIGNAL_ANSWER)
     assert_equal(s.connection_id, 12345)
     assert_equal(s.data, "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n")
     assert_equal(s.network_id, "9001")
     # Data may itself contain spaces; only the first two split.
-    var c = parse_signal("CANDIDATEADD 5 candidate:1 1 udp 2130706431 10.0.0.1 1 typ host", "n")
+    var c = parse_signal(
+        "CANDIDATEADD 5 candidate:1 1 udp 2130706431 10.0.0.1 1 typ host", "n"
+    )
     assert_equal(c.data, "candidate:1 1 udp 2130706431 10.0.0.1 1 typ host")
     # Empty data is allowed.
     var e = parse_signal("CONNECTERROR 5 ", "n")

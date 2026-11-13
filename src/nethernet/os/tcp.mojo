@@ -68,7 +68,9 @@ struct TcpStream(Movable):
         Raises:
             Error: If the connection fails or times out.
         """
-        var fd = sys_socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)
+        var fd = sys_socket(
+            AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0
+        )
         var sa = SockAddrIn.from_host(addr.ip, addr.port)
         var rc = sys_connect(fd, sa)
         if rc < 0 and rc != -EINPROGRESS:
@@ -169,7 +171,9 @@ struct TcpListener(Movable):
 
     var _fd: Int
 
-    def __init__(out self, bind_addr: SocketAddr, backlog: Int = 64) raises Errno:
+    def __init__(
+        out self, bind_addr: SocketAddr, backlog: Int = 64
+    ) raises Errno:
         """Creates a listener bound to `bind_addr`.
 
         Args:

@@ -13,7 +13,7 @@ IPv4; TLS and host-name resolution are out of scope.
 
 from ..json import json_quote
 from ..os.addr import SocketAddr
-from ..os.poll import wait_readable
+from ..os.poll import PollSet, wait_readable
 from ..os.random import random_u64
 from ..os.tcp import TcpListener, TcpStream
 from ..os.time import monotonic_ms
@@ -106,7 +106,9 @@ def _parse_uint(text: StringSpan, max_digits: Int) -> Optional[UInt64]:
     return v
 
 
-def _response(status: StringSpan, content_type: StringSpan, body: StringSpan) -> List[UInt8]:
+def _response(
+    status: StringSpan, content_type: StringSpan, body: StringSpan
+) -> List[UInt8]:
     var head = String(t"HTTP/1.1 {status}\r\n")
     if content_type.byte_length() > 0:
         head += String(t"Content-Type: {content_type}\r\n")
@@ -274,6 +276,17 @@ struct EndpointServer(Signaling):
         """
         return False
 
+    def add_poll_fds(self, mut set: PollSet):
+        """Adds the listening socket and every open HTTP connection.
+
+        Args:
+            set: The set to add the descriptors to.
+        """
+        _ = set.add(self._listener.fd())
+        for i in range(len(self._conns)):
+            if self._conns[i].state == _READING:
+                _ = set.add(self._conns[i].stream.fd())
+
     def poll_signal(mut self) -> Optional[Signal]:
         """Takes the next offer received over HTTP.
 
@@ -308,7 +321,9 @@ struct EndpointServer(Signaling):
                 var conn = self._conns.pop(i)
                 if signal.kind == SIGNAL_ANSWER:
                     conn.respond(
-                        Span(_response("200 OK", "application/sdp", signal.data))
+                        Span(
+                            _response("200 OK", "application/sdp", signal.data)
+                        )
                     )
                 else:
                     conn.respond(
@@ -377,7 +392,10 @@ struct EndpointServer(Signaling):
             if n == 0:
                 return False
             put_bytes(self._conns[index].buf, Span(self._chunk)[0:n])
-            if len(self._conns[index].buf) > _MAX_HEADER_SIZE + MAX_SDP_BODY_SIZE:
+            if (
+                len(self._conns[index].buf)
+                > _MAX_HEADER_SIZE + MAX_SDP_BODY_SIZE
+            ):
                 self._conns[index].respond(
                     Span(_response("413 Content Too Large", "", ""))
                 )
@@ -394,7 +412,9 @@ struct EndpointServer(Signaling):
         if head_end < 0:
             if len(self._conns[index].buf) > _MAX_HEADER_SIZE:
                 self._conns[index].respond(
-                    Span(_response("431 Request Header Fields Too Large", "", ""))
+                    Span(
+                        _response("431 Request Header Fields Too Large", "", "")
+                    )
                 )
                 return False
             return True
@@ -410,7 +430,9 @@ struct EndpointServer(Signaling):
         var request_line = String(from_utf8_lossy=head[0:line_end])
         var parts = request_line.split(" ")
         if len(parts) != 3:
-            self._conns[index].respond(Span(_response("400 Bad Request", "", "")))
+            self._conns[index].respond(
+                Span(_response("400 Bad Request", "", ""))
+            )
             return False
         var method = String(parts[0])
         var raw_target = String(parts[1])
@@ -441,9 +463,11 @@ struct EndpointServer(Signaling):
                 Span(_response("405 Method Not Allowed", "", ""))
             )
             return False
-        var id_text = String(target[byte=9 : target.byte_length()])
+        var id_text = String(target[byte = 9 : target.byte_length()])
         if _parse_uint(id_text, 20) is None:
-            self._conns[index].respond(Span(_response("400 Bad Request", "", "")))
+            self._conns[index].respond(
+                Span(_response("400 Bad Request", "", ""))
+            )
             return False
         var length_header = _header_value(head, "Content-Length")
         if length_header is None:
@@ -453,7 +477,9 @@ struct EndpointServer(Signaling):
             return False
         var length = _parse_uint(length_header.value(), 10)
         if length is None or length.value() == 0:
-            self._conns[index].respond(Span(_response("400 Bad Request", "", "")))
+            self._conns[index].respond(
+                Span(_response("400 Bad Request", "", ""))
+            )
             return False
         if length.value() > MAX_SDP_BODY_SIZE:
             self._conns[index].respond(
@@ -475,7 +501,9 @@ struct EndpointServer(Signaling):
                 ]
             )
         except:
-            self._conns[index].respond(Span(_response("400 Bad Request", "", "")))
+            self._conns[index].respond(
+                Span(_response("400 Bad Request", "", ""))
+            )
             return False
         var connection_id: UInt64
         try:
@@ -488,7 +516,9 @@ struct EndpointServer(Signaling):
         self._conns[index].state = _WAITING
         self._conns[index].network_id = id_text.copy()
         self._conns[index].connection_id = connection_id
-        self._conns[index].deadline_ms = now_ms + ENDPOINT_NEGOTIATION_TIMEOUT_MS
+        self._conns[index].deadline_ms = (
+            now_ms + ENDPOINT_NEGOTIATION_TIMEOUT_MS
+        )
         self._signals.append(Signal(SIGNAL_OFFER, connection_id, body, id_text))
         return True
 
@@ -558,7 +588,9 @@ struct HttpResponse(Copyable):
         self.body = List[UInt8]()
 
 
-def _parse_response(buf: Span[UInt8, _], eof: Bool) raises -> Optional[HttpResponse]:
+def _parse_response(
+    buf: Span[UInt8, _], eof: Bool
+) raises -> Optional[HttpResponse]:
     """Parses a response if it is complete; `None` means keep reading."""
     var head_end = _find_header_end(buf)
     if head_end < 0:
@@ -665,7 +697,8 @@ struct EndpointClient(Signaling):
         var deadline = monotonic_ms() + timeout_ms
         var stream = TcpStream.connect(self._server, timeout_ms)
         var request = String(
-            t"GET /v1/join HTTP/1.1\r\nHost: {self._server}\r\nUser-Agent: libhttpclient/1.0.0.0\r\nConnection: close\r\n\r\n"
+            t"GET /v1/join HTTP/1.1\r\nHost: {self._server}\r\nUser-Agent:"
+            t" libhttpclient/1.0.0.0\r\nConnection: close\r\n\r\n"
         )
         stream.write_all(request.as_bytes(), timeout_ms)
         var buf = List[UInt8]()
@@ -679,7 +712,8 @@ struct EndpointClient(Signaling):
             if case .Some(response) = parsed:
                 if response.status < 200 or response.status > 299:
                     raise Error(
-                        t"endpoint: probe answered with status {response.status}"
+                        t"endpoint: probe answered with status"
+                        t" {response.status}"
                     )
                 return String(from_utf8=Span(response.body))
             if n < 0:
@@ -748,7 +782,11 @@ struct EndpointClient(Signaling):
             raise Error("endpoint: a request is already in flight")
         var stream = TcpStream.connect(self._server, self._connect_timeout_ms)
         var head = String(
-            t"POST /v1/join/{self._network_id} HTTP/1.1\r\nHost: {self._server}\r\nUser-Agent: libhttpclient/1.0.0.0\r\nContent-Type: application/sdp\r\nContent-Length: {signal.data.byte_length()}\r\nConnection: close\r\n\r\n"
+            t"POST /v1/join/{self._network_id} HTTP/1.1\r\nHost:"
+            t" {self._server}\r\nUser-Agent:"
+            t" libhttpclient/1.0.0.0\r\nContent-Type:"
+            t" application/sdp\r\nContent-Length:"
+            t" {signal.data.byte_length()}\r\nConnection: close\r\n\r\n"
         )
         var request = List[UInt8](head.as_bytes())
         put_bytes(request, signal.data.as_bytes())
@@ -756,7 +794,9 @@ struct EndpointClient(Signaling):
         self._stream = stream^
         self._buf = List[UInt8]()
         self._connection_id = signal.connection_id
-        self._deadline_ms = monotonic_ms() + ENDPOINT_NEGOTIATION_TIMEOUT_MS + 5000
+        self._deadline_ms = (
+            monotonic_ms() + ENDPOINT_NEGOTIATION_TIMEOUT_MS + 5000
+        )
 
     def service(mut self, now_ms: Int) raises:
         """Reads the response of the request in flight, if any.
@@ -812,7 +852,9 @@ struct EndpointClient(Signaling):
             code = ERROR_GENERIC_FAILURE
         if code >= 0:
             self._signals.append(
-                Signal(SIGNAL_ERROR, self._connection_id, String(code), self.url())
+                Signal(
+                    SIGNAL_ERROR, self._connection_id, String(code), self.url()
+                )
             )
         self._stream = None
         self._deadline_ms = _NEVER

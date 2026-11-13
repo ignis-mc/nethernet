@@ -11,7 +11,13 @@ from nethernet.stun.message import (
     verify_message_integrity,
 )
 from nethernet.wire import bytes_of, hex_decode, hex_encode
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 
 # RFC 5769 section 2.1: sample request, password "VOkJxbRl1RmTxUk/WvJxBt".
@@ -112,7 +118,9 @@ def test_rejects_malformed() raises:
     with assert_raises(contains="length"):
         _ = parse_stun(Span(raw)[0 : len(raw) - 4])
     # An attribute length that runs past the end.
-    var bad = hex_decode("000100082112a442000000000000000000000000000600ff61626364")
+    var bad = hex_decode(
+        "000100082112a442000000000000000000000000000600ff61626364"
+    )
     with assert_raises():
         _ = parse_stun(Span(bad))
 

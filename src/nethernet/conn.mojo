@@ -125,7 +125,9 @@ struct _Channel(Copyable):
 
 
 def _random_letters(n: Int) raises -> String:
-    var alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".as_bytes()
+    var alphabet = (
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".as_bytes()
+    )
     var raw = random_bytes(n)
     var out = List[UInt8](capacity=n)
     for b in raw:
@@ -361,11 +363,9 @@ struct Conn(Movable):
             self._dtls_client = remote.setup == SETUP_PASSIVE
         else:
             self._dtls_client = remote.setup != SETUP_ACTIVE
-            self._local.setup = (
-                String(SETUP_ACTIVE)
-                if self._dtls_client
-                else String(SETUP_PASSIVE)
-            )
+            self._local.setup = String(
+                SETUP_ACTIVE
+            ) if self._dtls_client else String(SETUP_PASSIVE)
         var dtls_random = random_bytes(DTLS_RANDOM_LEN)
         var dtls_config = DtlsConfig(
             self._dtls_client,
@@ -661,7 +661,9 @@ struct Conn(Movable):
         self._sctp[].send(UInt16(base + 2), PPID_DCEP, Span(b), False, -1)
         self._state = CONN_STATE_OPEN
 
-    def _on_message(mut self, stream_id: UInt16, ppid: UInt32, data: Span[UInt8, _]):
+    def _on_message(
+        mut self, stream_id: UInt16, ppid: UInt32, data: Span[UInt8, _]
+    ):
         if ppid == PPID_DCEP:
             self._on_dcep(stream_id, data)
             return
@@ -683,10 +685,16 @@ struct Conn(Movable):
         if Int(stream_id) != self._reliable.stream_id:
             self._fail("message on an unknown data channel")
             return
-        if self._reliable.remaining >= 0 and count != self._reliable.remaining - 1:
+        if (
+            self._reliable.remaining >= 0
+            and count != self._reliable.remaining - 1
+        ):
             self._fail("out-of-sequence message segment")
             return
-        if len(self._reliable.buffer) + len(data) - 1 > self._config.max_packet_size:
+        if (
+            len(self._reliable.buffer) + len(data) - 1
+            > self._config.max_packet_size
+        ):
             self._fail("message exceeds the maximum packet size")
             return
         if not self._account(len(data) - 1):
@@ -704,7 +712,9 @@ struct Conn(Movable):
         """Charges `n` received bytes to the unread budget; False closes."""
         self._inbox_bytes += n
         if self._inbox_bytes > self._config.max_buffered_bytes:
-            self._fail("receive buffer overflow: the application is not reading")
+            self._fail(
+                "receive buffer overflow: the application is not reading"
+            )
             return False
         return True
 
@@ -757,7 +767,9 @@ struct Conn(Movable):
         """
         return self._remote_max_message_size - 1
 
-    def send(mut self, data: Span[UInt8, _], reliability: Int = RELIABLE) raises:
+    def send(
+        mut self, data: Span[UInt8, _], reliability: Int = RELIABLE
+    ) raises:
         """Queues one message for the peer.
 
         Nothing is transmitted until the next `poll()`. An empty message is
@@ -784,7 +796,11 @@ struct Conn(Movable):
             msg.append(0)
             msg.extend(data)
             self._sctp[].send(
-                UInt16(self._unreliable.stream_id), PPID_BINARY, Span(msg), True, 0
+                UInt16(self._unreliable.stream_id),
+                PPID_BINARY,
+                Span(msg),
+                True,
+                0,
             )
             return
         var segments = (len(data) + segment - 1) // segment
@@ -797,7 +813,11 @@ struct Conn(Movable):
             msg.append(UInt8(segments - 1 - i))
             msg.extend(data[offset : offset + n])
             self._sctp[].send(
-                UInt16(self._reliable.stream_id), PPID_BINARY, Span(msg), False, -1
+                UInt16(self._reliable.stream_id),
+                PPID_BINARY,
+                Span(msg),
+                False,
+                -1,
             )
             offset += n
 

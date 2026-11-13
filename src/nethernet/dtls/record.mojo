@@ -39,7 +39,11 @@ comptime ALERT_INTERNAL_ERROR = 80
 
 
 def put_record_header(
-    mut out: List[UInt8], content_type: UInt8, epoch: UInt16, seq: UInt64, length: Int
+    mut out: List[UInt8],
+    content_type: UInt8,
+    epoch: UInt16,
+    seq: UInt64,
+    length: Int,
 ):
     """Appends a 13-byte DTLS 1.2 record header.
 
@@ -178,7 +182,8 @@ struct RecordCipher(Movable):
 
 
 struct ReplayWindow(Copyable):
-    """A 64-entry sliding window over record sequence numbers (RFC 6347 4.1.2.6)."""
+    """A 64-entry sliding window over record sequence numbers (RFC 6347 4.1.2.6).
+    """
 
     var _highest: UInt64
     var _bitmap: UInt64

@@ -498,7 +498,9 @@ def encode_certificate_request(
     put_u16(out, 0)
 
 
-def encode_client_key_exchange(mut out: List[UInt8], public_key: Span[UInt8, _]):
+def encode_client_key_exchange(
+    mut out: List[UInt8], public_key: Span[UInt8, _]
+):
     """Appends an ECDHE ClientKeyExchange body.
 
     Args:

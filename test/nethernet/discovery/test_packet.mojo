@@ -5,11 +5,25 @@ from nethernet.discovery.packet import (
     DiscoveryPacket,
     discovery_key,
     marshal_packet,
+    seal_payload,
     unmarshal_packet,
 )
 from nethernet.discovery.server_data import GAME_TYPE_ADVENTURE, ServerData
-from nethernet.wire import bytes_of, hex_decode, hex_encode
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from nethernet.wire import (
+    bytes_of,
+    hex_decode,
+    hex_encode,
+    put_u16_le,
+    put_u32_le,
+    put_u64_le,
+)
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 
 def test_key() raises:
@@ -43,7 +57,10 @@ def test_response_round_trip() raises:
     # Header (20) + u32 hex length + lowercase ASCII hex.
     assert_equal(len(payload), 20 + 4 + 16)
     assert_equal(hex_encode(Span(payload)[20:24]), "10000000")
-    assert_equal(hex_encode(Span(payload)[24:40]), hex_encode(Span(bytes_of("0706736572766572"))))
+    assert_equal(
+        hex_encode(Span(payload)[24:40]),
+        hex_encode(Span(bytes_of("0706736572766572"))),
+    )
     var back = unmarshal_packet(Span(marshal_packet(pk)))
     assert_equal(back.kind, PACKET_RESPONSE)
     assert_equal(back.sender_id, 42)
@@ -99,6 +116,87 @@ def test_rejects_tampering() raises:
         _ = unmarshal_packet(Span(marshal_packet(unknown)))
 
 
+def _raw(
+    packet_id: UInt16, sender: UInt64, length: Int, body: Span[UInt8, _]
+) raises -> List[UInt8]:
+    """Seals a hand-built payload; `length` < 0 declares the true length."""
+    var payload = List[UInt8]()
+    var total = 20 + len(body)
+    put_u16_le(payload, UInt16(total if length < 0 else length))
+    put_u16_le(payload, packet_id)
+    put_u64_le(payload, sender)
+    for _ in range(8):
+        payload.append(0)
+    payload.extend(body)
+    return seal_payload(Span(payload))
+
+
+def test_declared_length_forms() raises:
+    # Mirrors go-nethernet's packet_test.go.
+    var empty = List[UInt8]()
+    # The game counts the length field itself: 20 for an empty request.
+    var inclusive = unmarshal_packet(
+        Span(_raw(0, 0x1020304050607080, 20, Span(empty)))
+    )
+    assert_equal(inclusive.kind, PACKET_REQUEST)
+    assert_equal(inclusive.sender_id, 0x1020304050607080)
+    # Older peers did not count it: 18.
+    var exclusive = unmarshal_packet(
+        Span(_raw(0, 0x1020304050607080, 18, Span(empty)))
+    )
+    assert_equal(exclusive.sender_id, 0x1020304050607080)
+    # A payload shorter than it claims is dropped.
+    with assert_raises(contains="declared length"):
+        _ = unmarshal_packet(Span(_raw(0, 1, 21, Span(empty))))
+
+
+def test_nested_lengths_are_ignored() raises:
+    var message_body = List[UInt8]()
+    put_u64_le(message_body, 2)
+    put_u32_le(message_body, 0xFFFF)
+    message_body.extend("Ping".as_bytes())
+    var message = unmarshal_packet(Span(_raw(2, 1, -1, Span(message_body))))
+    assert_equal(message.kind, PACKET_MESSAGE)
+    assert_equal(message.recipient_id, 2)
+    assert_equal(message.data, "Ping")
+
+    var response_body = List[UInt8]()
+    put_u32_le(response_body, 2)
+    response_body.extend("0a0b0c".as_bytes())
+    var response = unmarshal_packet(Span(_raw(1, 1, -1, Span(response_body))))
+    assert_equal(hex_encode(Span(response.application_data)), "0a0b0c")
+
+
+def test_message_data_past_declared_length() raises:
+    var declared = String("CONNECTREQUEST 1 v=0\r\n")
+    var rest = String("a=candidate:1 1 udp 1 192.168.1.2 50000 typ host\r\n")
+    var body = List[UInt8]()
+    put_u64_le(body, 2)
+    put_u32_le(body, UInt32(declared.byte_length()))
+    body.extend(declared.as_bytes())
+    body.extend(rest.as_bytes())
+    var message = unmarshal_packet(Span(_raw(2, 1, -1, Span(body))))
+    assert_equal(message.data, declared + rest)
+
+
+def test_non_utf8_message_is_rejected() raises:
+    var body = List[UInt8]()
+    put_u64_le(body, 2)
+    put_u32_le(body, 4)
+    body.append(0x43)
+    body.append(0xFF)
+    body.append(0xFE)
+    body.append(0x80)
+    with assert_raises():
+        _ = unmarshal_packet(Span(_raw(2, 1, -1, Span(body))))
+    var bad_hex = List[UInt8]()
+    put_u32_le(bad_hex, 2)
+    bad_hex.append(0xFF)
+    bad_hex.append(0x30)
+    with assert_raises(contains="hex"):
+        _ = unmarshal_packet(Span(_raw(1, 1, -1, Span(bad_hex))))
+
+
 def test_server_data_vector() raises:
     # go-nethernet discovery/server_data_test.go
     var d = ServerData()
@@ -115,7 +213,17 @@ def test_server_data_vector() raises:
     d.accepts_self_signed_auth = True
     d.nonce = "nonce"
     d.connection_type = 4
-    var expected = String("0706") + hex_encode(Span(bytes_of("server"))) + "8a2207" + hex_encode(Span(bytes_of("1.26.50"))) + "05" + hex_encode(Span(bytes_of("world"))) + "0210040001010105" + hex_encode(Span(bytes_of("nonce"))) + "08"
+    var expected = (
+        String("0706")
+        + hex_encode(Span(bytes_of("server")))
+        + "8a2207"
+        + hex_encode(Span(bytes_of("1.26.50")))
+        + "05"
+        + hex_encode(Span(bytes_of("world")))
+        + "0210040001010105"
+        + hex_encode(Span(bytes_of("nonce")))
+        + "08"
+    )
     var encoded = d.encode()
     assert_equal(hex_encode(Span(encoded)), expected)
     var back = ServerData.decode(Span(encoded))

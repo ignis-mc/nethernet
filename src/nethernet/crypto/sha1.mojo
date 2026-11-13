@@ -28,7 +28,11 @@ struct Sha1(Hash):
     def __init__(out self):
         """Creates a hasher with the SHA-1 initial state."""
         self._state = [
-            0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0
+            0x67452301,
+            0xEFCDAB89,
+            0x98BADCFE,
+            0x10325476,
+            0xC3D2E1F0,
         ]
         self._block = Array[UInt8, 64](fill=0)
         self._block_len = 0

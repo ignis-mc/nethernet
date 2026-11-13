@@ -25,7 +25,10 @@ struct SocketAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
             The address `a.b.c.d:port`.
         """
         return Self(
-            (UInt32(a) << 24) | (UInt32(b) << 16) | (UInt32(c) << 8) | UInt32(d),
+            (UInt32(a) << 24)
+            | (UInt32(b) << 16)
+            | (UInt32(c) << 8)
+            | UInt32(d),
             port,
         )
 

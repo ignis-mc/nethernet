@@ -26,7 +26,7 @@ Mojo.
 
 The whole stack works and interoperates with
 [go-nethernet](https://github.com/df-mc/go-nethernet) (pion) in both
-directions: `interop/run.sh` runs 21 dial/listen combinations over LAN
+directions: `interop/run.sh` runs 24 dial/listen combinations over LAN
 discovery signaling and HTTP signaling, with identity assertions, messages
 from 1 byte to 600 kB, the unreliable channel, and closes from either side.
 
@@ -43,7 +43,7 @@ It has not yet been run against the vanilla game client or server.
 | SCTP | RFC 9260 subset, PR-SCTP (FORWARD-TSN), stream reset |
 | Xbox Live / PlayFab signaling (WebSocket over TLS) | Not implemented |
 | STUN/TURN candidate gathering, IPv6, TCP candidates | Not implemented |
-| Platforms | Linux x86-64 and aarch64 only |
+| Platforms | Linux x86-64 (tested) and aarch64 (written, not yet run) |
 
 ## Requirements
 
@@ -125,8 +125,10 @@ def main() raises:
 ```
 
 To serve many connections from one loop, call `Listener.poll()` and
-`Conn.poll()` yourself and wait on their descriptors with
-`nethernet.os.poll.PollSet`; `examples/echo_server.mojo` shows the pattern.
+`Conn.poll()` yourself and wait on their descriptors
+(`Listener.add_poll_fds()`, `Conn.fd()`) with `nethernet.os.poll.PollSet`
+until the earliest `next_timeout()`; `examples/echo_server.mojo` shows the
+pattern.
 
 Consumers import the package from source with `-I path/to/nethernet/src`, or
 precompile it with `pixi run build` (`build/nethernet.mojoc`, tied to the
@@ -139,7 +141,8 @@ pixi run test          # every unit test file
 pixi run format        # mojo format, 80 columns
 pixi run lint-docs     # every public symbol needs a docstring
 pixi run build         # precompile the package
-pixi run check         # format-check + lint-docs + build + test
+pixi run smoke         # import the precompiled package from a consumer
+pixi run check         # format-check + lint-docs + smoke + test
 pixi run -e interop interop   # go-nethernet interop matrix (installs Go)
 pixi run bench
 ```

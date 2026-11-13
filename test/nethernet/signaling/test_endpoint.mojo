@@ -5,7 +5,11 @@ from nethernet.os.addr import SocketAddr
 from nethernet.os.poll import PollSet, wait_readable
 from nethernet.os.tcp import TcpStream
 from nethernet.os.time import monotonic_ms
-from nethernet.signaling.endpoint import EndpointClient, EndpointServer, EndpointStatus
+from nethernet.signaling.endpoint import (
+    EndpointClient,
+    EndpointServer,
+    EndpointStatus,
+)
 from nethernet.signaling.signal import (
     SIGNAL_ANSWER,
     SIGNAL_CANDIDATE,
@@ -14,12 +18,20 @@ from nethernet.signaling.signal import (
     Signal,
 )
 from nethernet.wire import bytes_of, string_of
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 comptime LOOPBACK = 0x7F000001
 
 
-def _request(mut server: EndpointServer, request: StringSpan, settle_ms: Int = 200) raises -> String:
+def _request(
+    mut server: EndpointServer, request: StringSpan, settle_ms: Int = 200
+) raises -> String:
     """Sends raw bytes to the server and returns everything it answers."""
     var stream = TcpStream.connect(server.local_addr(), 1000)
     stream.write_all(request.as_bytes(), 1000)
@@ -42,24 +54,33 @@ def test_probe() raises:
     var server = EndpointServer(SocketAddr(LOOPBACK, 0))
     var empty = _request(server, "GET /v1/join HTTP/1.1\r\nHost: x\r\n\r\n")
     assert_true(empty.startswith("HTTP/1.1 200 OK\r\n"))
-    assert_true(empty.endswith("Content-Length: 0\r\nConnection: close\r\n\r\n"))
+    assert_true(
+        empty.endswith("Content-Length: 0\r\nConnection: close\r\n\r\n")
+    )
 
     var status = EndpointStatus()
-    status.name = "Mojo \"server\""
+    status.name = 'Mojo "server"'
     status.version = "1.26.50"
     status.level = "world"
     status.players = 1
     status.max_players = 8
     status.game_type = 2
     server.set_status(status)
-    var with_status = _request(server, "GET /v1/join?version=1&protocol=2 HTTP/1.1\r\nHost: x\r\n\r\n")
+    var with_status = _request(
+        server, "GET /v1/join?version=1&protocol=2 HTTP/1.1\r\nHost: x\r\n\r\n"
+    )
     assert_true("Content-Type: application/json\r\n" in with_status)
-    assert_true(with_status.endswith(
-        "{\"name\":\"Mojo \\\"server\\\"\",\"protocol\":0,\"version\":\"1.26.50\",\"level\":\"world\",\"players\":1,\"maxPlayers\":8,\"gameType\":2}"
-    ))
+    assert_true(
+        with_status.endswith(
+            '{"name":"Mojo'
+            ' \\"server\\"","protocol":0,"version":"1.26.50","level":"world","players":1,"maxPlayers":8,"gameType":2}'
+        )
+    )
 
     var client = EndpointClient(server.local_addr())
-    assert_equal(client.url(), String(t"http://127.0.0.1:{server.local_addr().port}"))
+    assert_equal(
+        client.url(), String(t"http://127.0.0.1:{server.local_addr().port}")
+    )
 
 
 def test_rejects_bad_requests() raises:
@@ -70,14 +91,51 @@ def test_rejects_bad_requests() raises:
     tls.append(0x03)
     tls.append(0x01)
     assert_equal(_request(server, string_of(Span(tls))), "")
-    assert_true(_request(server, "GET /nope HTTP/1.1\r\n\r\n").startswith("HTTP/1.1 404"))
-    assert_true(_request(server, "PUT /v1/join/1 HTTP/1.1\r\nContent-Length: 1\r\n\r\nx").startswith("HTTP/1.1 405"))
-    assert_true(_request(server, "POST /v1/join HTTP/1.1\r\nContent-Length: 1\r\n\r\nx").startswith("HTTP/1.1 405"))
-    assert_true(_request(server, "POST /v1/join/abc HTTP/1.1\r\nContent-Length: 1\r\n\r\nx").startswith("HTTP/1.1 400"))
-    assert_true(_request(server, "POST /v1/join/99999999999999999999999 HTTP/1.1\r\nContent-Length: 1\r\n\r\nx").startswith("HTTP/1.1 400"))
-    assert_true(_request(server, "POST /v1/join/5 HTTP/1.1\r\nContent-Length: 0\r\n\r\n").startswith("HTTP/1.1 400"))
-    assert_true(_request(server, "POST /v1/join/5 HTTP/1.1\r\n\r\n").startswith("HTTP/1.1 411"))
-    assert_true(_request(server, "POST /v1/join/5 HTTP/1.1\r\nContent-Length: 1048577\r\n\r\n").startswith("HTTP/1.1 413"))
+    assert_true(
+        _request(server, "GET /nope HTTP/1.1\r\n\r\n").startswith(
+            "HTTP/1.1 404"
+        )
+    )
+    assert_true(
+        _request(
+            server, "PUT /v1/join/1 HTTP/1.1\r\nContent-Length: 1\r\n\r\nx"
+        ).startswith("HTTP/1.1 405")
+    )
+    assert_true(
+        _request(
+            server, "POST /v1/join HTTP/1.1\r\nContent-Length: 1\r\n\r\nx"
+        ).startswith("HTTP/1.1 405")
+    )
+    assert_true(
+        _request(
+            server, "POST /v1/join/abc HTTP/1.1\r\nContent-Length: 1\r\n\r\nx"
+        ).startswith("HTTP/1.1 400")
+    )
+    assert_true(
+        _request(
+            server,
+            (
+                "POST /v1/join/99999999999999999999999"
+                " HTTP/1.1\r\nContent-Length: 1\r\n\r\nx"
+            ),
+        ).startswith("HTTP/1.1 400")
+    )
+    assert_true(
+        _request(
+            server, "POST /v1/join/5 HTTP/1.1\r\nContent-Length: 0\r\n\r\n"
+        ).startswith("HTTP/1.1 400")
+    )
+    assert_true(
+        _request(server, "POST /v1/join/5 HTTP/1.1\r\n\r\n").startswith(
+            "HTTP/1.1 411"
+        )
+    )
+    assert_true(
+        _request(
+            server,
+            "POST /v1/join/5 HTTP/1.1\r\nContent-Length: 1048577\r\n\r\n",
+        ).startswith("HTTP/1.1 413")
+    )
     assert_true(_request(server, "garbage\r\n\r\n").startswith(""))
     assert_true(server.poll_signal() is None)
     assert_equal(server.pending_requests(), 0)
@@ -86,11 +144,15 @@ def test_rejects_bad_requests() raises:
 def test_offer_answer_round_trip() raises:
     var server = EndpointServer(SocketAddr(LOOPBACK, 0))
     var client = EndpointClient(server.local_addr())
-    client.send_signal(Signal(SIGNAL_OFFER, 77, "v=0\r\noffer\r\n", client.url()))
+    client.send_signal(
+        Signal(SIGNAL_OFFER, 77, "v=0\r\noffer\r\n", client.url())
+    )
     with assert_raises(contains="already in flight"):
         client.send_signal(Signal(SIGNAL_OFFER, 78, "x", client.url()))
     with assert_raises(contains="only offers"):
-        client.send_signal(Signal(SIGNAL_CANDIDATE, 77, "candidate:1", client.url()))
+        client.send_signal(
+            Signal(SIGNAL_CANDIDATE, 77, "candidate:1", client.url())
+        )
 
     var offer: Optional[Signal] = None
     for _ in range(100):
@@ -107,10 +169,21 @@ def test_offer_answer_round_trip() raises:
     assert_equal(server.pending_requests(), 1)
 
     with assert_raises(contains="only answers"):
-        server.send_signal(Signal(SIGNAL_CANDIDATE, got.connection_id, "c", got.network_id))
+        server.send_signal(
+            Signal(SIGNAL_CANDIDATE, got.connection_id, "c", got.network_id)
+        )
     with assert_raises(contains="no pending request"):
-        server.send_signal(Signal(SIGNAL_ANSWER, got.connection_id + 1, "x", got.network_id))
-    server.send_signal(Signal(SIGNAL_ANSWER, got.connection_id, "v=0\r\nanswer\r\n", got.network_id))
+        server.send_signal(
+            Signal(SIGNAL_ANSWER, got.connection_id + 1, "x", got.network_id)
+        )
+    server.send_signal(
+        Signal(
+            SIGNAL_ANSWER,
+            got.connection_id,
+            "v=0\r\nanswer\r\n",
+            got.network_id,
+        )
+    )
     assert_equal(server.pending_requests(), 0)
 
     var answer: Optional[Signal] = None
@@ -141,7 +214,9 @@ def test_error_code_response() raises:
             break
         _ = wait_readable(server.poll_fd(), 5)
     var got = offer.take()
-    server.send_signal(Signal(SIGNAL_ERROR, got.connection_id, "37", got.network_id))
+    server.send_signal(
+        Signal(SIGNAL_ERROR, got.connection_id, "37", got.network_id)
+    )
     var answer: Optional[Signal] = None
     for _ in range(100):
         client.service(monotonic_ms())

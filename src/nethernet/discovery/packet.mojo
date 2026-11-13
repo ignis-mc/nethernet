@@ -161,6 +161,49 @@ struct DiscoveryPacket(Copyable):
         return payload^
 
 
+def seal_payload(payload: Span[UInt8, _]) raises -> List[UInt8]:
+    """Authenticates and encrypts a plaintext payload into a datagram.
+
+    Args:
+        payload: The plaintext payload, starting with its length field.
+
+    Returns:
+        The datagram: a 32-byte HMAC followed by the encrypted payload.
+
+    Raises:
+        Error: If encryption fails.
+    """
+    var key = discovery_key()
+    var tag = hmac[Sha256](Span(key), payload)
+    var out = List[UInt8](capacity=32 + len(payload) + 16)
+    put_bytes(out, Span(tag))
+    ecb_encrypt_pkcs7(Span(key), payload, out)
+    return out^
+
+
+def open_payload(datagram: Span[UInt8, _]) raises -> List[UInt8]:
+    """Decrypts a datagram and checks its HMAC.
+
+    Args:
+        datagram: The received datagram.
+
+    Returns:
+        The plaintext payload.
+
+    Raises:
+        Error: If the datagram is too short, fails decryption or its HMAC.
+    """
+    if len(datagram) < 32:
+        raise Error("discovery: datagram too short")
+    var key = discovery_key()
+    var payload = List[UInt8]()
+    ecb_decrypt_pkcs7(Span(key), datagram[32 : len(datagram)], payload)
+    var tag = hmac[Sha256](Span(key), Span(payload))
+    if not constant_time_eq(Span(tag), datagram[0:32]):
+        raise Error("discovery: checksum mismatch")
+    return payload^
+
+
 def marshal_packet(pk: DiscoveryPacket) raises -> List[UInt8]:
     """Seals a packet into a datagram.
 
@@ -173,17 +216,17 @@ def marshal_packet(pk: DiscoveryPacket) raises -> List[UInt8]:
     Raises:
         Error: If encryption fails.
     """
-    var key = discovery_key()
     var payload = pk.encode_payload()
-    var tag = hmac[Sha256](Span(key), Span(payload))
-    var out = List[UInt8](capacity=32 + len(payload) + 16)
-    put_bytes(out, Span(tag))
-    ecb_encrypt_pkcs7(Span(key), Span(payload), out)
-    return out^
+    return seal_payload(Span(payload))
 
 
 def unmarshal_packet(datagram: Span[UInt8, _]) raises -> DiscoveryPacket:
     """Opens and decodes a datagram.
+
+    The length fields nested inside response and message bodies are ignored:
+    like the game, the reader takes everything up to the end of the payload.
+    A declared payload length shorter than the payload is accepted, which
+    covers older peers that did not count the length field itself.
 
     Args:
         datagram: The received datagram.
@@ -195,14 +238,7 @@ def unmarshal_packet(datagram: Span[UInt8, _]) raises -> DiscoveryPacket:
         Error: If the datagram is too short, fails decryption or its HMAC,
             declares more bytes than it has, or has an unknown packet ID.
     """
-    if len(datagram) < 32:
-        raise Error("discovery: datagram too short")
-    var key = discovery_key()
-    var payload = List[UInt8]()
-    ecb_decrypt_pkcs7(Span(key), datagram[32 : len(datagram)], payload)
-    var tag = hmac[Sha256](Span(key), Span(payload))
-    if not constant_time_eq(Span(tag), datagram[0:32]):
-        raise Error("discovery: checksum mismatch")
+    var payload = open_payload(datagram)
     if len(payload) < 4:
         raise Error("discovery: payload too short")
     var r = Reader(Span(payload))

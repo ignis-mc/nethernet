@@ -16,6 +16,7 @@ Options:
     --allow-identityless accept a server that sends no identity assertion
     --expect-fail       succeed only if the server rejects the connection
     --bye               ask the server to close the connection
+    --close-after-write N  finally send N bytes and close without waiting
     --timeout SECONDS   give up after this long (default 30)
 """
 
@@ -93,8 +94,20 @@ def exercise(mut conn: Conn, deadline: Int) raises:
                 received += 1
         # Loopback does not lose packets, so anything missing is a bug.
         if received != unreliable_count:
-            raise Error(t"unreliable: received {received} of {unreliable_count}")
+            raise Error(
+                t"unreliable: received {received} of {unreliable_count}"
+            )
         print("UNRELIABLE", received)
+
+    var final_size = Int(option("--close-after-write", "0"))
+    if final_size > 0:
+        # Write and close at once: close() must still deliver the message.
+        var last = payload(final_size)
+        conn.send(Span(last))
+        conn.close()
+        print("WROTE_AND_CLOSED", final_size)
+        print("OK")
+        return
 
     if flag("--bye"):
         var bye: List[UInt8] = [0x42, 0x59, 0x45]
@@ -112,9 +125,9 @@ def exercise(mut conn: Conn, deadline: Int) raises:
     print("OK")
 
 
-def connect[S: Signaling](
-    mut signaling: S, network_id: StringSpan, deadline: Int
-) raises:
+def connect[
+    S: Signaling
+](mut signaling: S, network_id: StringSpan, deadline: Int) raises:
     """Dials `network_id` and runs the echo checks (or expects rejection)."""
     var config = DialConfig()
     config.timeout_ms = max(1000, deadline - monotonic_ms())

@@ -1,7 +1,11 @@
 """Base64 (RFC 4648): the standard alphabet with padding and the URL-safe one without."""
 
-comptime _STD: StaticString = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-comptime _URL: StaticString = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+comptime _STD: StaticString = (
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+)
+comptime _URL: StaticString = (
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+)
 
 
 def _encode(data: Span[UInt8, _], alphabet: StringSpan, pad: Bool) -> String:
@@ -9,7 +13,11 @@ def _encode(data: Span[UInt8, _], alphabet: StringSpan, pad: Bool) -> String:
     var out = List[UInt8](capacity=(len(data) + 2) // 3 * 4)
     var i = 0
     while i + 3 <= len(data):
-        var n = (UInt32(data[i]) << 16) | (UInt32(data[i + 1]) << 8) | UInt32(data[i + 2])
+        var n = (
+            (UInt32(data[i]) << 16)
+            | (UInt32(data[i + 1]) << 8)
+            | UInt32(data[i + 2])
+        )
         out.append(table[Int((n >> 18) & 63)])
         out.append(table[Int((n >> 12) & 63)])
         out.append(table[Int((n >> 6) & 63)])

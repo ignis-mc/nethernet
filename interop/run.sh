@@ -26,7 +26,8 @@ trap 'rm -rf "$logs"' EXIT
 
 echo "== building"
 mkdir -p build
-(cd interop/go && GOFLAGS=-mod=mod go build -o bin/interop .) || exit 1
+# CGO is not needed, and conda's Go would otherwise look for a C compiler.
+(cd interop/go && CGO_ENABLED=0 GOFLAGS=-mod=mod go build -o bin/interop .) || exit 1
 mojo build -I src examples/echo_server.mojo -o build/echo_server 2>"$logs/build.log" \
     || { grep -v Crashpad "$logs/build.log"; exit 1; }
 mojo build -I src examples/echo_client.mojo -o build/echo_client 2>"$logs/build.log" \
@@ -116,6 +117,10 @@ run_case mojo-to-go.three-clients 3 \
     "$GO listen -bind 127.0.0.1:{PORT} -conns 3 -timeout 60s" \
     "$MOJO_CLIENT --target 127.0.0.1:{PORT} --sizes 1,70000,300000 --unreliable 4 --timeout 60"
 
+run_case mojo-to-go.write-then-close 1 \
+    "$GO listen -bind 127.0.0.1:{PORT} -conns 1 -expect-last 300000 -timeout 60s" \
+    "$MOJO_CLIENT --target 127.0.0.1:{PORT} --sizes 1 --close-after-write 300000 --timeout 60"
+
 echo "== go-nethernet dials, Mojo listens"
 run_case go-to-mojo.identity 1 \
     "$MOJO_SERVER --bind 127.0.0.1:{PORT} --conns 1 --timeout 60" \
@@ -133,6 +138,10 @@ run_case go-to-mojo.three-clients 3 \
     "$MOJO_SERVER --bind 127.0.0.1:{PORT} --conns 3 --timeout 60" \
     "$GO dial -target 127.0.0.1:{PORT} -identity -sizes 1,70000,300000 -unreliable 4 -timeout 60s"
 
+run_case go-to-mojo.write-then-close 1 \
+    "$MOJO_SERVER --bind 127.0.0.1:{PORT} --conns 1 --expect-last 300000 --timeout 60" \
+    "$GO dial -target 127.0.0.1:{PORT} -identity -sizes 1 -close-after-write 300000 -timeout 60s"
+
 echo "== Mojo dials, Mojo listens"
 run_case mojo-to-mojo.identity 1 \
     "$MOJO_SERVER --bind 127.0.0.1:{PORT} --conns 1 --timeout 60" \
@@ -143,6 +152,10 @@ run_case mojo-to-mojo.server-closes 1 \
 run_case mojo-to-mojo.anonymous-rejected 1 \
     "$MOJO_SERVER --bind 127.0.0.1:{PORT} --timeout 60" \
     "$MOJO_CLIENT --target 127.0.0.1:{PORT} --anonymous --expect-fail --timeout 30"
+
+run_case mojo-to-mojo.write-then-close 1 \
+    "$MOJO_SERVER --bind 127.0.0.1:{PORT} --conns 1 --expect-last 300000 --timeout 60" \
+    "$MOJO_CLIENT --target 127.0.0.1:{PORT} --sizes 1 --close-after-write 300000 --timeout 60"
 
 echo "== HTTP signaling (the join-by-address path)"
 run_case mojo-to-go.http 1 \

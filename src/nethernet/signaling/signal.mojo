@@ -1,5 +1,7 @@
 """The signal wire format, error codes and the `Signaling` trait."""
 
+from ..os.poll import PollSet
+
 comptime SIGNAL_OFFER: StaticString = "CONNECTREQUEST"
 """Carries the offerer's SDP."""
 comptime SIGNAL_ANSWER: StaticString = "CONNECTRESPONSE"
@@ -171,12 +173,12 @@ def parse_signal(text: StringSpan, network_id: StringSpan) raises -> Signal:
     if first <= 0:
         raise Error("signal: missing connection ID")
     var kind = text[byte=0:first]
-    var rest = text[byte=first + 1 : text.byte_length()]
+    var rest = text[byte = first + 1 : text.byte_length()]
     var second = rest.find(" ")
     if second < 0:
         raise Error("signal: missing data")
     var id_text = rest[byte=0:second]
-    var data = rest[byte=second + 1 : rest.byte_length()]
+    var data = rest[byte = second + 1 : rest.byte_length()]
     if (
         kind != SIGNAL_OFFER
         and kind != SIGNAL_ANSWER
@@ -261,3 +263,16 @@ trait Signaling(Deinitable, Movable):
             `False` if every candidate must be embedded in the SDP.
         """
         ...
+
+    def add_poll_fds(self, mut set: PollSet):
+        """Adds every descriptor `service()` reads from to a `PollSet`.
+
+        The default adds `poll_fd()`. Channels with several sockets override
+        this so an event loop wakes for all of them.
+
+        Args:
+            set: The set to add the descriptors to.
+        """
+        var fd = self.poll_fd()
+        if fd >= 0:
+            _ = set.add(fd)

@@ -12,6 +12,7 @@ Options:
     --bind-ip IP       local address for connections (default: default route)
     --allow-anonymous  accept offers without an identity assertion
     --conns N          exit after N connections have closed (default: never)
+    --expect-last N    fail unless each connection's last message has N bytes
     --timeout SECONDS  exit with an error after this long (default: never)
 """
 
@@ -42,10 +43,12 @@ def flag(name: StringSpan) -> Bool:
     return False
 
 
-def serve[S: Signaling](
-    mut listener: Listener[S], max_conns: Int, timeout_s: Int
-) raises:
+def serve[
+    S: Signaling
+](mut listener: Listener[S], max_conns: Int, timeout_s: Int) raises:
     """Accepts connections and echoes messages until `max_conns` have closed."""
+    var expect_last = Int(option("--expect-last", "0"))
+    var last_sizes = List[Int]()
     var conns = List[Conn]()
     var closed = 0
     var started = monotonic_ms()
@@ -61,6 +64,7 @@ def serve[S: Signaling](
             var conn = accepted.take()
             print("ACCEPTED", conn.remote_network_id(), conn.connection_id())
             conns.append(conn^)
+            last_sizes.append(0)
 
         var i = 0
         while i < len(conns):
@@ -70,6 +74,7 @@ def serve[S: Signaling](
                 if message is None:
                     break
                 var bytes = message.take()
+                last_sizes[i] = len(bytes)
                 # "BYE" asks the server to hang up.
                 if (
                     len(bytes) == 3
@@ -79,7 +84,8 @@ def serve[S: Signaling](
                 ):
                     conns[i].close()
                     break
-                conns[i].send(Span(bytes), RELIABLE)
+                if not conns[i].is_closed():
+                    conns[i].send(Span(bytes), RELIABLE)
             while not conns[i].is_closed():
                 var datagram = conns[i].receive(UNRELIABLE)
                 if datagram is None:
@@ -88,16 +94,27 @@ def serve[S: Signaling](
             if not conns[i].is_closed():
                 conns[i].poll(now)
             if conns[i].is_closed():
+                # Messages that arrived together with the close are still
+                # readable.
+                while True:
+                    var late = conns[i].receive(RELIABLE)
+                    if late is None:
+                        break
+                    last_sizes[i] = len(late.value())
                 var done = conns.pop(i)
-                print("CLOSED", done.close_reason())
+                var last_size = last_sizes.pop(i)
+                print("CLOSED", done.close_reason(), "last message", last_size)
+                if expect_last > 0 and last_size != expect_last:
+                    raise Error(
+                        t"last message had {last_size} bytes, expected"
+                        t" {expect_last}"
+                    )
                 closed += 1
                 continue
             i += 1
 
         var set = PollSet()
-        var signaling_fd = listener.signaling().poll_fd()
-        if signaling_fd >= 0:
-            _ = set.add(signaling_fd)
+        listener.add_poll_fds(set)
         var wake = now + 20
         for j in range(len(conns)):
             _ = set.add(conns[j].fd())

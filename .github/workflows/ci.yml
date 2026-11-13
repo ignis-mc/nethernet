@@ -27,8 +27,8 @@ jobs:
         run: pixi run format-check
       - name: Docstrings
         run: pixi run lint-docs
-      - name: Precompile the package
-        run: pixi run build
+      - name: Precompile the package and import it
+        run: pixi run smoke
       - name: Unit tests
         run: pixi run test
       - name: Build the examples

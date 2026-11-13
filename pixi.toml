@@ -19,9 +19,10 @@ format = { cmd = "mojo format src test examples benchmarks", description = "Form
 format-check = { cmd = "bash scripts/check_format.sh", description = "Fail if formatting would change anything" }
 lint-docs = { cmd = "mojo doc --diagnose-missing-doc-strings --Werror -o /dev/null src/nethernet", description = "Fail on missing or malformed docstrings" }
 build = { cmd = "mkdir -p build && mojo precompile src/nethernet -o build/nethernet.mojoc", description = "Precompile the package" }
+smoke = { cmd = "bash scripts/smoke_package.sh", depends-on = ["build"], description = "Import the precompiled package from a consumer program" }
 examples = { cmd = "bash scripts/build_examples.sh", description = "Build the example programs into build/" }
 bench = { cmd = "bash scripts/run_benchmarks.sh", description = "Run the benchmarks" }
-check = { depends-on = ["format-check", "lint-docs", "build", "test"], description = "Everything CI runs except interop" }
+check = { depends-on = ["format-check", "lint-docs", "smoke", "test"], description = "Everything CI runs except interop" }
 
 # Interoperability tests against go-nethernet need a Go toolchain.
 [feature.interop.dependencies]

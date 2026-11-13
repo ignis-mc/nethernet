@@ -35,7 +35,9 @@ struct Pair(Movable):
         self.acceptor = acceptor^
 
 
-def _connect(mut listener: Listener[DiscoveryListener], mut client: DiscoveryListener) raises -> Pair:
+def _connect(
+    mut listener: Listener[DiscoveryListener], mut client: DiscoveryListener
+) raises -> Pair:
     """Dials the listener from `client` and returns both ends."""
     var host_id = listener.signaling().id()
     client.add_peer(host_id, listener.signaling().local_addr(), monotonic_ms())
@@ -75,7 +77,12 @@ def _pump(mut a: Conn, mut b: Conn, ms: Int) raises:
         _ = set.wait(2)
 
 
-def _receive(mut conn: Conn, mut other: Conn, timeout_ms: Int, reliability: Int = RELIABLE) raises -> List[UInt8]:
+def _receive(
+    mut conn: Conn,
+    mut other: Conn,
+    timeout_ms: Int,
+    reliability: Int = RELIABLE,
+) raises -> List[UInt8]:
     var deadline = monotonic_ms() + timeout_ms
     while monotonic_ms() < deadline:
         var now = monotonic_ms()
@@ -194,7 +201,10 @@ def test_two_connections_at_once() raises:
     var got_b = _receive(pair_b.acceptor, pair_b.dialer, 5000)
     assert_equal(string_of(Span(got_a)), "from a")
     assert_equal(string_of(Span(got_b)), "from b")
-    assert_false(pair_a.acceptor.remote_network_id() == pair_b.acceptor.remote_network_id())
+    assert_false(
+        pair_a.acceptor.remote_network_id()
+        == pair_b.acceptor.remote_network_id()
+    )
     assert_equal(listener.pending_count(), 0)
 
 
@@ -211,7 +221,9 @@ def test_identities_are_exchanged_and_checked() raises:
     assert_equal(len(seen_by_listener), 97)
     var expected = p384_public_key(Span(listener.identity_key()))
     assert_equal(hex_encode(Span(seen_by_dialer)), hex_encode(Span(expected)))
-    assert_false(hex_encode(Span(seen_by_listener)) == hex_encode(Span(expected)))
+    assert_false(
+        hex_encode(Span(seen_by_listener)) == hex_encode(Span(expected))
+    )
 
 
 def test_anonymous_offer_is_rejected() raises:

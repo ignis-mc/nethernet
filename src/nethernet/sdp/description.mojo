@@ -175,13 +175,13 @@ def parse_description(text: StringSpan) raises -> Description:
             continue
         if not line.startswith("a="):
             continue
-        var attr = line[byte=2 : line.byte_length()]
+        var attr = line[byte = 2 : line.byte_length()]
         var key = attr
         var value = attr[byte=0:0]
         var colon = attr.find(":")
         if colon >= 0:
             key = attr[byte=0:colon]
-            value = attr[byte=colon + 1 : attr.byte_length()]
+            value = attr[byte = colon + 1 : attr.byte_length()]
         var in_media = media_sections > 0
         if key == "candidate":
             d.candidates.append(String(value))

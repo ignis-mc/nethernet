@@ -11,13 +11,21 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 def test_sha1_vectors() raises:
     var empty = List[UInt8]()
     var d0 = sha1(Span(empty))
-    assert_equal(hex_encode(Span(d0)), "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+    assert_equal(
+        hex_encode(Span(d0)), "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+    )
     var abc = bytes_of("abc")
     var d1 = sha1(Span(abc))
-    assert_equal(hex_encode(Span(d1)), "a9993e364706816aba3e25717850c26c9cd0d89d")
-    var long = bytes_of("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+    assert_equal(
+        hex_encode(Span(d1)), "a9993e364706816aba3e25717850c26c9cd0d89d"
+    )
+    var long = bytes_of(
+        "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+    )
     var d2 = sha1(Span(long))
-    assert_equal(hex_encode(Span(d2)), "84983e441c3bd26ebaae4aa1f95129e5e54670f1")
+    assert_equal(
+        hex_encode(Span(d2)), "84983e441c3bd26ebaae4aa1f95129e5e54670f1"
+    )
 
 
 def test_sha512_vectors() raises:
@@ -75,7 +83,9 @@ def test_hmac_sha256_rfc4231() raises:
     )
     # Key longer than the block size.
     var key6 = List[UInt8](length=131, fill=0xAA)
-    var msg6 = bytes_of("Test Using Larger Than Block-Size Key - Hash Key First")
+    var msg6 = bytes_of(
+        "Test Using Larger Than Block-Size Key - Hash Key First"
+    )
     var t6 = hmac[Sha256](Span(key6), Span(msg6))
     assert_equal(
         hex_encode(Span(t6)),
@@ -87,11 +97,15 @@ def test_hmac_sha1_rfc2202() raises:
     var key1 = List[UInt8](length=20, fill=0x0B)
     var msg1 = bytes_of("Hi There")
     var t1 = hmac[Sha1](Span(key1), Span(msg1))
-    assert_equal(hex_encode(Span(t1)), "b617318655057264e28bc0b6fb378c8ef146be00")
+    assert_equal(
+        hex_encode(Span(t1)), "b617318655057264e28bc0b6fb378c8ef146be00"
+    )
     var key2 = bytes_of("Jefe")
     var msg2 = bytes_of("what do ya want for nothing?")
     var t2 = hmac[Sha1](Span(key2), Span(msg2))
-    assert_equal(hex_encode(Span(t2)), "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79")
+    assert_equal(
+        hex_encode(Span(t2)), "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79"
+    )
 
 
 def test_hmac_sha384_sha512_rfc4231() raises:
@@ -114,7 +128,7 @@ def test_hmac_streaming() raises:
     var msg = bytes_of("The quick brown fox jumps over the lazy dog")
     var mac = Hmac[Sha256](Span(key))
     mac.update(Span(msg)[0:10])
-    mac.update(Span(msg)[10:len(msg)])
+    mac.update(Span(msg)[10 : len(msg)])
     var tag = mac.finish()
     assert_equal(
         hex_encode(Span(tag)),

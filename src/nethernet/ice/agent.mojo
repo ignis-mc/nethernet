@@ -266,7 +266,9 @@ struct IceAgent(Movable):
         if self._selected >= 0 and self._pairs[self._selected].remote == src:
             self._touch(now_ms)
 
-    def handle_packet(mut self, data: Span[UInt8, _], src: SocketAddr, now_ms: Int):
+    def handle_packet(
+        mut self, data: Span[UInt8, _], src: SocketAddr, now_ms: Int
+    ):
         """Processes one inbound STUN datagram.
 
         Malformed or unauthenticated messages are dropped silently.

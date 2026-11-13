@@ -119,6 +119,13 @@ src/nethernet/
   `now_ms: Int` and hand back packets and events. Only `os/`, `conn.mojo`,
   `dialer.mojo`, `listener.mojo`, `discovery/` and `signaling/endpoint*`
   touch sockets.
+- The only other inline assembly is the empty value barrier in
+  `crypto/mont.mojo`, which stops LLVM turning masked table scans back into
+  secret-dependent branches. `crypto/aes.mojo` and `crypto/gcm.mojo` select
+  their AES-NI and PCLMULQDQ paths with the private stdlib predicate
+  `CompilationTarget._has_feature`; if a Mojo update removes it, set
+  `AES_HARDWARE` and `GCM_HARDWARE` to `False` and the portable code takes
+  over.
 - Every system call lives in `src/nethernet/os/_sys/linux.mojo`. Wrappers
   borrow their buffers (`Span`, `mut` arguments) so the owner stays alive
   across the call; never pass `Int(x.unsafe_ptr())` of a local whose last use

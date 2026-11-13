@@ -33,13 +33,19 @@ struct Identity(Copyable):
         self.key = List[UInt8](Span(key))
         var serial = _seed(tag + 100, 8)
         self.cert = self_signed_certificate(
-            Span(self.key), Span(serial), 1_700_000_000, 1_900_000_000, "nethernet"
+            Span(self.key),
+            Span(serial),
+            1_700_000_000,
+            1_900_000_000,
+            "nethernet",
         )
 
 
 def _make(is_client: Bool, id: Identity, tag: UInt8) -> DtlsConn:
     var random = _seed(tag, 72)
-    var config = DtlsConfig(is_client, Span(id.cert), Span(id.key), Span(random))
+    var config = DtlsConfig(
+        is_client, Span(id.cert), Span(id.key), Span(random)
+    )
     return DtlsConn(config)
 
 
@@ -87,7 +93,9 @@ struct Link:
                     self.delivered += 1
                     a.handle_datagram(Span(datagram), now_ms)
 
-    def run(mut self, mut a: DtlsConn, mut b: DtlsConn, duration_ms: Int) -> Int:
+    def run(
+        mut self, mut a: DtlsConn, mut b: DtlsConn, duration_ms: Int
+    ) -> Int:
         var now = 0
         a.start(now)
         b.start(now)
@@ -95,7 +103,10 @@ struct Link:
             a.handle_timeout(now)
             b.handle_timeout(now)
             self.pump(a, b, now)
-            if a.state() != DTLS_STATE_HANDSHAKING and b.state() != DTLS_STATE_HANDSHAKING:
+            if (
+                a.state() != DTLS_STATE_HANDSHAKING
+                and b.state() != DTLS_STATE_HANDSHAKING
+            ):
                 break
             now += 50
         return now
@@ -157,10 +168,14 @@ def test_fingerprint_is_enforced() raises:
 
     # With the right fingerprint on both sides the handshake completes.
     var crandom2 = _seed(33, 72)
-    var cconfig2 = DtlsConfig(True, Span(cid.cert), Span(cid.key), Span(crandom2))
+    var cconfig2 = DtlsConfig(
+        True, Span(cid.cert), Span(cid.key), Span(crandom2)
+    )
     cconfig2.remote_fingerprint = _fingerprint(sid)
     var srandom2 = _seed(34, 72)
-    var sconfig2 = DtlsConfig(False, Span(sid.cert), Span(sid.key), Span(srandom2))
+    var sconfig2 = DtlsConfig(
+        False, Span(sid.cert), Span(sid.key), Span(srandom2)
+    )
     sconfig2.remote_fingerprint = _fingerprint(cid)
     var client2 = DtlsConn(cconfig2)
     var server2 = DtlsConn(sconfig2)
@@ -175,7 +190,9 @@ def test_server_rejects_wrong_client_fingerprint() raises:
     var sid = Identity(7)
     var other = Identity(8)
     var srandom = _seed(41, 72)
-    var sconfig = DtlsConfig(False, Span(sid.cert), Span(sid.key), Span(srandom))
+    var sconfig = DtlsConfig(
+        False, Span(sid.cert), Span(sid.key), Span(srandom)
+    )
     sconfig.remote_fingerprint = _fingerprint(other)
     var server = DtlsConn(sconfig)
     var client = _make(True, cid, 42)
@@ -199,9 +216,14 @@ def test_handshake_survives_loss() raises:
             or server.state() != DTLS_STATE_CONNECTED
         ):
             print(
-                "loss", loss, "trial", trial,
-                "client:", client.failure_reason(),
-                "server:", server.failure_reason(),
+                "loss",
+                loss,
+                "trial",
+                trial,
+                "client:",
+                client.failure_reason(),
+                "server:",
+                server.failure_reason(),
             )
         assert_equal(client.state(), DTLS_STATE_CONNECTED)
         assert_equal(server.state(), DTLS_STATE_CONNECTED)
@@ -222,7 +244,9 @@ def test_small_mtu_fragments_handshake() raises:
     var cconfig = DtlsConfig(True, Span(cid.cert), Span(cid.key), Span(crandom))
     cconfig.mtu = 200
     var srandom = _seed(72, 72)
-    var sconfig = DtlsConfig(False, Span(sid.cert), Span(sid.key), Span(srandom))
+    var sconfig = DtlsConfig(
+        False, Span(sid.cert), Span(sid.key), Span(srandom)
+    )
     sconfig.mtu = 200
     var client = DtlsConn(cconfig)
     var server = DtlsConn(sconfig)

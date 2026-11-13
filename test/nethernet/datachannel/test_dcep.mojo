@@ -6,11 +6,21 @@ from nethernet.datachannel.dcep import (
     is_dcep_ack,
 )
 from nethernet.wire import hex_decode, hex_encode
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 # The exact bytes pion sends for NetherNet's two channels.
-comptime PION_RELIABLE_OPEN = "03000100000000000013000052656c6961626c65446174614368616e6e656c"
-comptime PION_UNRELIABLE_OPEN = "038101000000000000150000556e72656c6961626c65446174614368616e6e656c"
+comptime PION_RELIABLE_OPEN = (
+    "03000100000000000013000052656c6961626c65446174614368616e6e656c"
+)
+comptime PION_UNRELIABLE_OPEN = (
+    "038101000000000000150000556e72656c6961626c65446174614368616e6e656c"
+)
 
 
 def test_encode_matches_pion() raises:

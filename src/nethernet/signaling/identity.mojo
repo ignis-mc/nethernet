@@ -31,18 +31,25 @@ from ..crypto.x509 import (
     encode_ec_public_key_info,
     parse_public_key_info,
 )
-from ..json import json_parse_int, json_parse_object, json_parse_string, json_quote
+from ..json import (
+    json_parse_int,
+    json_parse_object,
+    json_parse_string,
+    json_quote,
+)
 
 comptime IDENTITY_DOMAIN_SERVER: StaticString = "self"
 """The identity-provider domain go-nethernet servers use."""
-comptime IDENTITY_DOMAIN_CLIENT: StaticString = "https://authorization.franchise.minecraft-services.net/"
+comptime IDENTITY_DOMAIN_CLIENT: StaticString = (
+    "https://authorization.franchise.minecraft-services.net/"
+)
 """The identity-provider domain clients use."""
 comptime TOKEN_LIFETIME_S = 60
 """How long a freshly issued token is valid."""
 comptime CLOCK_LEEWAY_S = 60
 """The clock difference tolerated when checking a token's time claims."""
 
-comptime _ES384_HEADER: StaticString = "{\"alg\":\"ES384\"}"
+comptime _ES384_HEADER: StaticString = '{"alg":"ES384"}'
 
 
 def fingerprint_payload(algorithm: StringSpan, digest: StringSpan) -> String:
@@ -96,7 +103,8 @@ def _split3(text: StringSpan) raises -> List[String]:
 
 
 struct Identity(Copyable):
-    """A local identity: a P-384 key and a token that presents its public half."""
+    """A local identity: a P-384 key and a token that presents its public half.
+    """
 
     var private_key: List[UInt8]
     """The 48-byte P-384 private scalar."""
@@ -106,7 +114,10 @@ struct Identity(Copyable):
     """The identity-provider domain announced with the assertion."""
 
     def __init__(
-        out self, private_key: Span[UInt8, _], token: StringSpan, domain: StringSpan
+        out self,
+        private_key: Span[UInt8, _],
+        token: StringSpan,
+        domain: StringSpan,
     ):
         """Wraps an existing key and token, for example an Xbox-issued one.
 
@@ -163,7 +174,9 @@ struct Identity(Copyable):
         var claims_b64 = base64url_encode(claims.as_bytes())
         var signature = _sign_es384(private_key, header_b64, claims_b64)
         return Identity(
-            private_key, String(t"{header_b64}.{claims_b64}.{signature}"), domain
+            private_key,
+            String(t"{header_b64}.{claims_b64}.{signature}"),
+            domain,
         )
 
     def sign(self, algorithm: StringSpan, digest: StringSpan) raises -> String:
@@ -274,7 +287,9 @@ struct RemoteIdentity(Copyable):
             and self.protocol == "default"
         )
 
-    def public_key(self, self_signed: Bool, now_unix_s: Int) raises -> List[UInt8]:
+    def public_key(
+        self, self_signed: Bool, now_unix_s: Int
+    ) raises -> List[UInt8]:
         """Extracts the P-384 public key the token presents.
 
         Args:

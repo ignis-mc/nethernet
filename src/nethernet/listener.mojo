@@ -147,6 +147,21 @@ struct Listener[S: Signaling](Movable):
         """
         return len(self._pending)
 
+    def add_poll_fds(self, mut set: PollSet):
+        """Adds every descriptor `poll()` reads from to a `PollSet`.
+
+        That is the signaling channel's descriptor and the socket of every
+        connection still being negotiated. An event loop that waits on these
+        (and until `next_timeout()`) reacts to each handshake packet at once
+        instead of on its next tick.
+
+        Args:
+            set: The set to add the descriptors to.
+        """
+        self._signaling.add_poll_fds(set)
+        for i in range(len(self._pending)):
+            _ = set.add(self._pending[i].conn.fd())
+
     def next_timeout(self) -> Int:
         """Computes when `poll()` next has timer work to do.
 
@@ -159,7 +174,9 @@ struct Listener[S: Signaling](Movable):
             t = min(t, self._pending[i].deadline_ms)
         return t
 
-    def _send(mut self, kind: StringSpan, id: UInt64, data: StringSpan, to: StringSpan):
+    def _send(
+        mut self, kind: StringSpan, id: UInt64, data: StringSpan, to: StringSpan
+    ):
         try:
             self._signaling.send_signal(Signal(kind, id, data, to))
         except:
@@ -260,7 +277,10 @@ struct Listener[S: Signaling](Movable):
             )
         except:
             self._send(
-                SIGNAL_ERROR, signal.connection_id, String(code), signal.network_id
+                SIGNAL_ERROR,
+                signal.connection_id,
+                String(code),
+                signal.network_id,
             )
 
     def poll(mut self, now_ms: Int) raises:
@@ -350,9 +370,5 @@ struct Listener[S: Signaling](Movable):
                 0, min(min(50, deadline - now), self.next_timeout() - now)
             )
             var set = PollSet()
-            var signaling_fd = self._signaling.poll_fd()
-            if signaling_fd >= 0:
-                _ = set.add(signaling_fd)
-            for i in range(len(self._pending)):
-                _ = set.add(self._pending[i].conn.fd())
+            self.add_poll_fds(set)
             _ = set.wait(wait)

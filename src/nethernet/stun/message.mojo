@@ -439,9 +439,7 @@ struct StunBuilder(Movable):
             The encoded message. The builder is empty afterwards.
         """
         if len(integrity_key) > 0:
-            set_u16(
-                self._buf, 2, UInt16(len(self._buf) + 24 - STUN_HEADER_LEN)
-            )
+            set_u16(self._buf, 2, UInt16(len(self._buf) + 24 - STUN_HEADER_LEN))
             var tag = hmac[Sha1](integrity_key, Span(self._buf))
             self.add(STUN_ATTR_MESSAGE_INTEGRITY, Span(tag))
         if fingerprint:

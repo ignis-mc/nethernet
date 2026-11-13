@@ -152,9 +152,9 @@ def parse_candidate(text: StringSpan) raises -> IceCandidate:
     """
     var s = text.strip()
     if s.startswith("a="):
-        s = s[byte=2 : s.byte_length()]
+        s = s[byte = 2 : s.byte_length()]
     if s.startswith("candidate:"):
-        s = s[byte=10 : s.byte_length()]
+        s = s[byte = 10 : s.byte_length()]
     var f = _split_spaces(s)
     if len(f) < 8:
         raise Error("candidate has too few fields")
@@ -174,7 +174,12 @@ def parse_candidate(text: StringSpan) raises -> IceCandidate:
     if f[6] != "typ":
         raise Error("candidate is missing 'typ'")
     var kind = f[7].copy()
-    if kind != "host" and kind != "srflx" and kind != "prflx" and kind != "relay":
+    if (
+        kind != "host"
+        and kind != "srflx"
+        and kind != "prflx"
+        and kind != "relay"
+    ):
         raise Error("unknown candidate type")
     var cand = IceCandidate(
         f[0], UInt32(priority), SocketAddr(ip, UInt16(port)), kind

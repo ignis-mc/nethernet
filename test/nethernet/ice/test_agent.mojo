@@ -30,11 +30,15 @@ def _addr_b() -> SocketAddr:
     return SocketAddr.v4(10, 0, 0, 2, 2000)
 
 
-def _make(controlling: Bool, ufrag: StringSpan, pwd: StringSpan, tie: UInt64) -> IceAgent:
+def _make(
+    controlling: Bool, ufrag: StringSpan, pwd: StringSpan, tie: UInt64
+) -> IceAgent:
     return IceAgent(controlling, ufrag, pwd, tie, tie * 7919 + 13)
 
 
-def _pump(mut a: IceAgent, mut b: IceAgent, now_ms: Int, drop_a_to_b: Bool = False) -> Int:
+def _pump(
+    mut a: IceAgent, mut b: IceAgent, now_ms: Int, drop_a_to_b: Bool = False
+) -> Int:
     """Delivers queued datagrams both ways until quiet; returns the count."""
     var total = 0
     var progress = True
@@ -60,7 +64,13 @@ def _pump(mut a: IceAgent, mut b: IceAgent, now_ms: Int, drop_a_to_b: Bool = Fal
     return total
 
 
-def _run(mut a: IceAgent, mut b: IceAgent, start_ms: Int, duration_ms: Int, drop_a_to_b: Bool = False) -> Int:
+def _run(
+    mut a: IceAgent,
+    mut b: IceAgent,
+    start_ms: Int,
+    duration_ms: Int,
+    drop_a_to_b: Bool = False,
+) -> Int:
     var now = start_ms
     while now <= start_ms + duration_ms:
         a.handle_timeout(now)

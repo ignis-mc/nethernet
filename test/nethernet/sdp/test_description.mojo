@@ -28,7 +28,8 @@ def test_encode_matches_go_nethernet_layout() raises:
         "a=ice-ufrag:abcdEFGHijklMNOP\r\n"
         "a=ice-pwd:abcdefghijklmnopqrstuvwxyzABCDEF\r\n"
         "a=ice-options:trickle\r\n"
-        "a=fingerprint:sha-256 AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89\r\n"
+        "a=fingerprint:sha-256"
+        " AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89\r\n"
         "a=setup:actpass\r\n"
         "a=mid:0\r\n"
         "a=sctp-port:5000\r\n"
@@ -41,14 +42,24 @@ def test_encode_with_candidates_and_identity() raises:
     var d = _sample()
     d.identity = "eyJhc3NlcnRpb24iOiJ4In0="
     d.candidates.append(
-        "3288563104 1 udp 2130706431 192.168.1.20 45000 typ host generation 0 ufrag abcdEFGHijklMNOP network-id 0 network-cost 0"
+        "3288563104 1 udp 2130706431 192.168.1.20 45000 typ host generation 0"
+        " ufrag abcdEFGHijklMNOP network-id 0 network-cost 0"
     )
     var text = d.encode()
-    assert_true("a=identity:eyJhc3NlcnRpb24iOiJ4In0=\r\nm=application 45000 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 192.168.1.20\r\na=candidate:3288563104 1 udp" in text)
+    assert_true(
+        "a=identity:eyJhc3NlcnRpb24iOiJ4In0=\r\nm=application 45000"
+        " UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4"
+        " 192.168.1.20\r\na=candidate:3288563104 1 udp"
+        in text
+    )
     var back = parse_description(text)
     assert_equal(back.identity, "eyJhc3NlcnRpb24iOiJ4In0=")
     assert_equal(len(back.candidates), 1)
-    assert_true(back.candidates[0].startswith("3288563104 1 udp 2130706431 192.168.1.20 45000 typ host"))
+    assert_true(
+        back.candidates[0].startswith(
+            "3288563104 1 udp 2130706431 192.168.1.20 45000 typ host"
+        )
+    )
 
 
 def test_round_trip() raises:
@@ -99,21 +110,35 @@ def test_parse_rejects_bad_documents() raises:
     with assert_raises(contains="media section"):
         _ = parse_description("v=0\r\na=ice-ufrag:x\r\n")
     with assert_raises(contains="media section"):
-        _ = parse_description(good + "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n")
+        _ = parse_description(
+            good + "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
+        )
     with assert_raises(contains="ICE credentials"):
-        _ = parse_description(good.replace("a=ice-pwd:abcdefghijklmnopqrstuvwxyzABCDEF\r\n", ""))
+        _ = parse_description(
+            good.replace("a=ice-pwd:abcdefghijklmnopqrstuvwxyzABCDEF\r\n", "")
+        )
     with assert_raises(contains="fingerprint"):
-        _ = parse_description(good.replace("a=fingerprint:sha-256 ", "a=fingerprint:sha-256"))
+        _ = parse_description(
+            good.replace("a=fingerprint:sha-256 ", "a=fingerprint:sha-256")
+        )
     with assert_raises(contains="setup"):
-        _ = parse_description(good.replace("a=setup:actpass", "a=setup:holdconn"))
+        _ = parse_description(
+            good.replace("a=setup:actpass", "a=setup:holdconn")
+        )
     with assert_raises(contains="setup"):
         _ = parse_description(good.replace("a=setup:actpass\r\n", ""))
     with assert_raises(contains="max-message-size"):
-        _ = parse_description(good.replace("a=max-message-size:262144", "a=max-message-size:1"))
+        _ = parse_description(
+            good.replace("a=max-message-size:262144", "a=max-message-size:1")
+        )
     with assert_raises(contains="max-message-size"):
-        _ = parse_description(good.replace("a=max-message-size:262144", "a=max-message-size:0"))
+        _ = parse_description(
+            good.replace("a=max-message-size:262144", "a=max-message-size:0")
+        )
     with assert_raises():
-        _ = parse_description(good.replace("a=max-message-size:262144", "a=max-message-size:abc"))
+        _ = parse_description(
+            good.replace("a=max-message-size:262144", "a=max-message-size:abc")
+        )
     var d = _sample()
     d.fingerprint = "ABCD"
     with assert_raises(contains="fingerprint"):

@@ -14,7 +14,9 @@ def _loopback() -> SocketAddr:
     return SocketAddr.v4(127, 0, 0, 1, 0)
 
 
-def _settle(mut a: DiscoveryListener, mut b: DiscoveryListener, now_ms: Int) raises:
+def _settle(
+    mut a: DiscoveryListener, mut b: DiscoveryListener, now_ms: Int
+) raises:
     """Lets datagrams cross the loopback and be processed by both ends."""
     for _ in range(4):
         _ = wait_readable(a.poll_fd(), 20)

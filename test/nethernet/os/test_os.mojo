@@ -5,7 +5,13 @@ from nethernet.os.tcp import TcpListener, TcpStream
 from nethernet.os.time import monotonic_ms, monotonic_ns, unix_time_s
 from nethernet.os.udp import UdpSocket, default_local_ip
 from nethernet.wire import bytes_of, string_of
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 
 def test_socket_addr_parse_and_format() raises:
@@ -18,7 +24,15 @@ def test_socket_addr_parse_and_format() raises:
     assert_equal(b.port, 19132)
     assert_true(a == SocketAddr.parse("192.168.1.10:7551"))
     assert_false(a == b)
-    for bad in ["1.2.3", "1.2.3.4.5", "256.1.1.1", "a.b.c.d", "1..2.3", "", "1.2.3.4."]:
+    for bad in [
+        "1.2.3",
+        "1.2.3.4.5",
+        "256.1.1.1",
+        "a.b.c.d",
+        "1..2.3",
+        "",
+        "1.2.3.4.",
+    ]:
         with assert_raises(contains="invalid IPv4"):
             _ = SocketAddr.parse_ip(bad)
     with assert_raises():

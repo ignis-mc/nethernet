@@ -90,7 +90,10 @@ struct DiscoveryListener(Signaling):
         if self._network_id == 0:
             self._network_id = random_u64()
         self._broadcast = broadcast
-        if broadcast is None and self._socket.local_addr().port != DISCOVERY_PORT:
+        if (
+            broadcast is None
+            and self._socket.local_addr().port != DISCOVERY_PORT
+        ):
             self._broadcast = SocketAddr.v4(255, 255, 255, 255, DISCOVERY_PORT)
         self._server_data = List[UInt8]()
         self._peers = Dict[UInt64, _Peer]()
@@ -282,7 +285,10 @@ struct DiscoveryListener(Signaling):
                 return
         elif pk.kind == PACKET_RESPONSE:
             self._learn(pk.sender_id, src, now_ms)
-            if pk.sender_id in self._responses or len(self._responses) < _MAX_PEERS:
+            if (
+                pk.sender_id in self._responses
+                or len(self._responses) < _MAX_PEERS
+            ):
                 self._responses[pk.sender_id] = DiscoveredServer(
                     pk.sender_id, src, pk.application_data.copy(), now_ms
                 )
