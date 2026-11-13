@@ -9,7 +9,8 @@ limited-retransmission policy of RFC 3758 with FORWARD-TSN.
 On top of fast retransmit it detects losses the way RACK-TLP does for TCP
 (RFC 8985), as pion's SCTP does: a chunk is lost once a chunk transmitted
 after it is acknowledged, and a tail that goes unacknowledged for about two
-round trips is probed by resending its last chunk. Request/response traffic
+round trips is probed by resending its last chunk, again at doubling
+intervals while no acknowledgement arrives. Request/response traffic
 ends every message in such a tail, where waiting for three missing reports
 or for T3-rtx (at least a second, doubling) stalls the connection.
 """
@@ -201,7 +202,8 @@ struct Sender(Movable):
     var _reset_ready: List[UInt16]
     var _xmit_seq: Int
     var _rack_seq: Int
-    var _probe_sent: Bool
+    var _probes: Int
+    """Tail loss probes sent since the last acknowledgement."""
 
     def __init__(
         out self,
@@ -257,7 +259,7 @@ struct Sender(Movable):
         self._reset_ready = List[UInt16]()
         self._xmit_seq = 0
         self._rack_seq = 0
-        self._probe_sent = False
+        self._probes = 0
 
     def set_peer(mut self, a_rwnd: UInt32, forward_tsn: Bool):
         """Records what the peer announced in its INIT or INIT ACK.
@@ -636,7 +638,7 @@ struct Sender(Movable):
             self._rack_seq = newest_xmit
         _ = self._rack_detect(now_ms)
         if newly_acked:
-            self._probe_sent = False
+            self._probes = 0
 
         if acked_bytes > 0 and not self._fast_recovery:
             if self._cwnd <= self._ssthresh:
@@ -696,9 +698,12 @@ struct Sender(Movable):
         if self._outstanding <= 0:
             self.probe.stop()
             return
-        var deadline = -1
-        if not self._probe_sent:
-            deadline = now_ms + 2 * self.rto.srtt() + _PROBE_SLACK_MS
+        # Each unanswered probe doubles the wait, so a silent peer gets a
+        # handful of probes before T3-rtx, not a stream of them.
+        var shift = self._probes if self._probes < 10 else 10
+        var deadline = now_ms + (
+            (2 * self.rto.srtt() + _PROBE_SLACK_MS) << shift
+        )
         var reorder = self.rto.srtt() // 4
         if reorder > 0:
             # Wake when a chunk RACK already suspects leaves the window.
@@ -713,7 +718,7 @@ struct Sender(Movable):
                 var at = self._inflight[i].sent_at + reorder
                 if deadline < 0 or at < deadline:
                     deadline = at
-        if deadline < 0 or (self.t3.armed and deadline >= self.t3.deadline):
+        if self.t3.armed and deadline >= self.t3.deadline:
             self.probe.stop()
             return
         self.probe.start(deadline)
@@ -721,16 +726,16 @@ struct Sender(Movable):
     def on_probe_expired(mut self, now_ms: Int):
         """Handles an expiry of the loss detection timer.
 
-        Marks the chunks RACK now judges lost or, if there are none and the
-        tail has not been probed since the last acknowledgement, marks the
-        highest unacknowledged chunk for one retransmission that bypasses
-        the congestion window. Neither backs off the timeout.
+        Marks the chunks RACK now judges lost or, if there are none, marks
+        the highest unacknowledged chunk for one retransmission that
+        bypasses the congestion window. Neither backs off the RTO; the next
+        probe waits twice as long unless an acknowledgement arrives first.
 
         Args:
             now_ms: The current time in milliseconds.
         """
         self.probe.stop()
-        if self._rack_detect(now_ms) > 0 or self._probe_sent:
+        if self._rack_detect(now_ms) > 0:
             return
         var i = len(self._inflight) - 1
         while i >= 0:
@@ -748,7 +753,7 @@ struct Sender(Movable):
         self._inflight[i].retransmit = True
         self._inflight[i].fast = True
         self._marked += 1
-        self._probe_sent = True
+        self._probes += 1
         self.loss_probes += 1
 
     def on_t3_expired(mut self, now_ms: Int):
@@ -763,7 +768,7 @@ struct Sender(Movable):
         """
         self.t3_expiries += 1
         self.probe.stop()
-        self._probe_sent = False
+        self._probes = 0
         self._ssthresh = self._cwnd // 2
         if self._ssthresh < 4 * self._mtu:
             self._ssthresh = 4 * self._mtu
@@ -982,4 +987,4 @@ struct Sender(Movable):
         self._forward_needed = False
         self.t3.stop()
         self.probe.stop()
-        self._probe_sent = False
+        self._probes = 0
