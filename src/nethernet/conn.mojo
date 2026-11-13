@@ -54,6 +54,7 @@ from .sctp.config import (
     SCTP_EVENT_MESSAGE,
     SCTP_EVENT_STREAM_RESET,
     SctpConfig,
+    SctpStats,
 )
 from .sdp.description import (
     DEFAULT_MAX_MESSAGE_SIZE,
@@ -482,6 +483,14 @@ struct Conn(Movable):
         if rtt < 0:
             return -1
         return rtt // 2
+
+    def sctp_stats(self) -> SctpStats:
+        """Gets the SCTP association's traffic and recovery counters.
+
+        Returns:
+            The counters, all zero until the association starts.
+        """
+        return self._sctp[].stats()
 
     def fd(self) -> Int:
         """Gets the socket descriptor, for waiting with a `PollSet`.
