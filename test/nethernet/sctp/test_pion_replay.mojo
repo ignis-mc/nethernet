@@ -11,13 +11,11 @@ content otherwise.
 """
 
 from nethernet.sctp.association import Association
-from nethernet.sctp.chunk import (
+from nethernet.sctp.chunk import decode_init, decode_sack, encode_cookie_echo
+from nethernet.sctp.reconfig import (
     PARAM_OUTGOING_RESET,
     PARAM_RECONFIG_RESPONSE,
-    decode_init,
     decode_reconfig,
-    decode_sack,
-    encode_cookie_echo,
 )
 from nethernet.sctp.config import (
     SCTP_EVENT_CLOSED,
@@ -99,14 +97,18 @@ def _chunks_of(packets: List[List[UInt8]], kind: UInt8) raises -> List[String]:
     return out^
 
 
-def _values_of(packets: List[List[UInt8]], kind: UInt8) raises -> List[List[UInt8]]:
+def _values_of(
+    packets: List[List[UInt8]], kind: UInt8
+) raises -> List[List[UInt8]]:
     var out = List[List[UInt8]]()
     for i in range(len(packets)):
         var view = parse_packet(Span(packets[i]))
         for c in view.chunks:
             if c.kind == kind:
                 out.append(
-                    List[UInt8](Span(packets[i])[c.offset : c.offset + c.length])
+                    List[UInt8](
+                        Span(packets[i])[c.offset : c.offset + c.length]
+                    )
                 )
     return out^
 
@@ -191,7 +193,7 @@ def _run(lines: List[String], connect: Bool) raises -> Replay:
         if line.startswith("# B got "):
             # "stream=0 ppi=50 len=31": mirror pion B's application, which
             # answers every DCEP message with a 4-byte ACK.
-            var what = String(line[byte=8:line.byte_length()])
+            var what = String(line[byte = 8 : line.byte_length()])
             r.b_got.append(what)
             var fields = what.split(" ")
             var stream = Int(String(fields[0]).removeprefix("stream="))
@@ -294,9 +296,7 @@ def _check_common(r: Replay, lost_unordered: Bool) raises:
     var their_sacks = _sack_summaries(r.theirs)
     assert_true(len(their_sacks) >= 4)
     assert_true(_is_subsequence(their_sacks, my_sacks))
-    assert_equal(
-        my_sacks[len(my_sacks) - 1], their_sacks[len(their_sacks) - 1]
-    )
+    assert_equal(my_sacks[len(my_sacks) - 1], their_sacks[len(their_sacks) - 1])
 
     # RE-CONFIG: the response to pion's reset request is identical; our own
     # request asks for the same thing as pion B's.
@@ -306,7 +306,9 @@ def _check_common(r: Replay, lost_unordered: Bool) raises:
     assert_equal(len(their_reconf), 2)
     var my_response = decode_reconfig(Span(my_reconf[0]))
     assert_true(my_response[0].kind == PARAM_RECONFIG_RESPONSE)
-    assert_equal(hex_encode(Span(my_reconf[0])), hex_encode(Span(their_reconf[0])))
+    assert_equal(
+        hex_encode(Span(my_reconf[0])), hex_encode(Span(their_reconf[0]))
+    )
     var my_request = decode_reconfig(Span(my_reconf[1]))
     var their_request = decode_reconfig(Span(their_reconf[1]))
     assert_true(my_request[0].kind == PARAM_OUTGOING_RESET)

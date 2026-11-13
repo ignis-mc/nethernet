@@ -77,7 +77,9 @@ def _check(sent: List[Sent], events: List[SctpEvent]) raises:
                 var i = per_stream[stream][k]
                 if seen[i] or sent[i].size != len(got[j].payload):
                     continue
-                if same_bytes(got[j].payload, pattern(sent[i].size, sent[i].seed)):
+                if same_bytes(
+                    got[j].payload, pattern(sent[i].size, sent[i].seed)
+                ):
                     found = i
                     break
         else:
@@ -151,13 +153,19 @@ def _session(seed: UInt64) raises:
             var unordered = stream == 2 or stream == 3
             if from_a:
                 net.a.send(
-                    UInt16(stream), UInt32(50 + stream), Span(m), unordered,
+                    UInt16(stream),
+                    UInt32(50 + stream),
+                    Span(m),
+                    unordered,
                     policies[stream],
                 )
                 sent_a.append(Sent(stream, size, step))
             else:
                 net.b.send(
-                    UInt16(stream), UInt32(50 + stream), Span(m), unordered,
+                    UInt16(stream),
+                    UInt32(50 + stream),
+                    Span(m),
+                    unordered,
                     policies[stream],
                 )
                 sent_b.append(Sent(stream, size, step))

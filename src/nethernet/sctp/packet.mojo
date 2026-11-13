@@ -268,3 +268,90 @@ def parse_packet(packet: Span[UInt8, _]) raises -> PacketView:
             padded = size
         pos = padded
     return view^
+
+
+struct Tlv(ImplicitlyCopyable):
+    """The position of one type-length-value item inside a chunk value."""
+
+    var kind: UInt16
+    """The parameter or cause type."""
+    var offset: Int
+    """The offset of the item value."""
+    var length: Int
+    """The length of the item value, without header or padding."""
+
+    def __init__(out self, kind: UInt16, offset: Int, length: Int):
+        """Creates an item reference.
+
+        Args:
+            kind: The parameter or cause type.
+            offset: The offset of the item value.
+            length: The length of the item value.
+        """
+        self.kind = kind
+        self.offset = offset
+        self.length = length
+
+
+def parse_tlvs(data: Span[UInt8, _], start: Int) raises -> List[Tlv]:
+    """Splits a run of parameters or error causes into items.
+
+    Every item but the last must be padded to 4 bytes.
+
+    Args:
+        data: The chunk value.
+        start: The offset of the first item.
+
+    Returns:
+        The location of every item, in wire order.
+
+    Raises:
+        Error: If an item header is truncated or a length is below 4 or runs
+            past the end.
+    """
+    var items = List[Tlv]()
+    var size = len(data)
+    var pos = start
+    if pos > size:
+        raise Error("sctp: chunk shorter than its fixed fields")
+    while pos < size:
+        if size - pos < 4:
+            raise Error("sctp: truncated parameter header")
+        var length = Int(get_u16(data, pos + 2))
+        if length < 4 or pos + length > size:
+            raise Error("sctp: bad parameter length")
+        items.append(Tlv(get_u16(data, pos), pos + 4, length - 4))
+        pos += pad4(length)
+    return items^
+
+
+def begin_param(mut out: List[UInt8], chunk_start: Int, kind: UInt16) -> Int:
+    """Appends the header of a parameter or error cause inside a chunk.
+
+    The previous item is padded only now, when another one follows, so that
+    the chunk length leaves out the padding of the final item.
+
+    Args:
+        out: The buffer holding the chunk being built.
+        chunk_start: The offset of the chunk header.
+        kind: The parameter or cause type.
+
+    Returns:
+        The offset of the item header, to pass to `end_param()`.
+    """
+    while (len(out) - chunk_start) % 4 != 0:
+        out.append(0)
+    var start = len(out)
+    put_u16(out, kind)
+    put_u16(out, 0)
+    return start
+
+
+def end_param(mut out: List[UInt8], start: Int):
+    """Patches the length of a parameter or error cause.
+
+    Args:
+        out: The buffer holding the item.
+        start: The offset returned by `begin_param()`.
+    """
+    set_u16(out, start + 2, UInt16(len(out) - start))

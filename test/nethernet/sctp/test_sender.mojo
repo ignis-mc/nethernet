@@ -59,7 +59,9 @@ def _sender(initial_tsn: UInt32, rwnd: UInt32) -> Sender:
     return s^
 
 
-def _queue(mut s: Sender, stream: UInt16, size: Int, unordered: Bool, max_rtx: Int):
+def _queue(
+    mut s: Sender, stream: UInt16, size: Int, unordered: Bool, max_rtx: Int
+):
     var payload = List[UInt8](length=size, fill=UInt8(size & 0xFF))
     s.queue_message(stream, 53, Span(payload), unordered, max_rtx)
 

@@ -402,10 +402,14 @@ struct Sender(Movable):
     def _abandon_message(mut self, i: Int):
         var n = len(self._inflight)
         var first = i
-        while first > 0 and (self._inflight[first].flags & DATA_FLAG_BEGIN) == 0:
+        while (
+            first > 0 and (self._inflight[first].flags & DATA_FLAG_BEGIN) == 0
+        ):
             first -= 1
         var last = i
-        while last < n - 1 and (self._inflight[last].flags & DATA_FLAG_END) == 0:
+        while (
+            last < n - 1 and (self._inflight[last].flags & DATA_FLAG_END) == 0
+        ):
             last += 1
         for j in range(first, last + 1):
             if self._inflight[j].abandoned:
@@ -676,7 +680,9 @@ struct Sender(Movable):
         self.forward_tsns_out += 1
         return True
 
-    def fill(mut self, mut out: List[UInt8], limit: Int, now_ms: Int) raises -> Int:
+    def fill(
+        mut self, mut out: List[UInt8], limit: Int, now_ms: Int
+    ) raises -> Int:
         """Appends as many chunks to a packet as the windows allow.
 
         Writes a FORWARD-TSN if one is due, then retransmissions, then new

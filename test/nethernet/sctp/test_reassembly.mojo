@@ -24,7 +24,9 @@ comptime E = DATA_FLAG_END
 comptime U = DATA_FLAG_UNORDERED
 
 
-def _chunk(tsn: UInt32, stream: UInt16, ssn: UInt16, flags: UInt8, text: StringSpan) -> DataChunk:
+def _chunk(
+    tsn: UInt32, stream: UInt16, ssn: UInt16, flags: UInt8, text: StringSpan
+) -> DataChunk:
     var payload = bytes_of(text)
     return DataChunk(tsn, stream, ssn, 53, flags, Span(payload))
 
@@ -159,7 +161,9 @@ def test_single_fragment_messages() raises:
     var out = List[SctpMessage]()
     assert_equal(r.insert(_chunk(1, 0, 0, B | E, "a"), 1, out), REASSEMBLY_OK)
     assert_equal(r.insert(_chunk(2, 0, 1, B | E, "b"), 2, out), REASSEMBLY_OK)
-    assert_equal(r.insert(_chunk(3, 7, 0, B | E | U, "c"), 3, out), REASSEMBLY_OK)
+    assert_equal(
+        r.insert(_chunk(3, 7, 0, B | E | U, "c"), 3, out), REASSEMBLY_OK
+    )
     assert_equal(_texts(out), "a|b|c")
     assert_equal(out[0].stream_id, 0)
     assert_equal(out[0].ppid, 53)
@@ -173,8 +177,14 @@ def test_single_fragment_messages() raises:
 def test_fragments_in_any_order() raises:
     # TSNs 10..13 make one message; try every arrival order.
     var orders: List[List[Int]] = [
-        [0, 1, 2, 3], [3, 2, 1, 0], [1, 3, 0, 2], [2, 0, 3, 1], [0, 3, 1, 2],
-        [3, 0, 2, 1], [1, 2, 0, 3], [2, 1, 3, 0],
+        [0, 1, 2, 3],
+        [3, 2, 1, 0],
+        [1, 3, 0, 2],
+        [2, 0, 3, 1],
+        [0, 3, 1, 2],
+        [3, 0, 2, 1],
+        [1, 2, 0, 3],
+        [2, 1, 3, 0],
     ]
     var parts: List[String] = ["he", "ll", "o ", "you"]
     for o in range(len(orders)):
@@ -257,7 +267,9 @@ def test_stale_and_duplicate_sequence_numbers_are_discarded() raises:
         r.insert(_chunk(2, 0, 0, B | E, "again"), 2, out), REASSEMBLY_DISCARDED
     )
     # Two different messages claiming the same future ssn.
-    assert_equal(r.insert(_chunk(3, 0, 5, B | E, "five"), 3, out), REASSEMBLY_OK)
+    assert_equal(
+        r.insert(_chunk(3, 0, 5, B | E, "five"), 3, out), REASSEMBLY_OK
+    )
     assert_equal(
         r.insert(_chunk(4, 0, 5, B | E, "five!"), 4, out), REASSEMBLY_DISCARDED
     )
@@ -278,7 +290,9 @@ def test_message_size_limit() raises:
     )
     var exact = Reassembly(10)
     _ = exact.insert(_chunk(2, 0, 0, B, "123456"), 2, out)
-    assert_equal(exact.insert(_chunk(3, 0, 0, E, "7890"), 3, out), REASSEMBLY_OK)
+    assert_equal(
+        exact.insert(_chunk(3, 0, 0, E, "7890"), 3, out), REASSEMBLY_OK
+    )
     assert_equal(_texts(out), "1234567890")
 
 

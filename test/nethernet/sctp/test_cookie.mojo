@@ -1,6 +1,17 @@
-from nethernet.sctp.cookie import COOKIE_SIZE, CookieData, decode_cookie, encode_cookie
+from nethernet.sctp.cookie import (
+    COOKIE_SIZE,
+    CookieData,
+    decode_cookie,
+    encode_cookie,
+)
 from nethernet.wire import bytes_of
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 
 def _sample() -> CookieData:

@@ -58,7 +58,9 @@ struct Flight(Copyable):
     var to_b: Bool
     var data: List[UInt8]
 
-    def __init__(out self, deliver_at: Int, order: Int, to_b: Bool, data: Span[UInt8, _]):
+    def __init__(
+        out self, deliver_at: Int, order: Int, to_b: Bool, data: Span[UInt8, _]
+    ):
         self.deliver_at = deliver_at
         self.order = order
         self.to_b = to_b
@@ -119,7 +121,9 @@ struct Net(Movable):
     var captured_ba: List[List[UInt8]]
     """With `capture` set, every packet B emits."""
 
-    def __init__(out self, var a: Association, var b: Association, seed: UInt64):
+    def __init__(
+        out self, var a: Association, var b: Association, seed: UInt64
+    ):
         self.a = a^
         self.b = b^
         self.now = 0

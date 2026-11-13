@@ -10,10 +10,17 @@ from nethernet.sctp.packet import (
     packet_checksum,
     pad4,
     parse_packet,
+    parse_tlvs,
     stored_checksum,
 )
 from nethernet.wire import hex_decode, hex_encode, put_bytes
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 # Packets recorded from pion/sctp v1.12.0 (two associations over a pipe).
 comptime PION_INIT = "1388138800000000638d94c90100001cac060e9700100000ffffffff2816389d8008000882c040c2"
@@ -32,7 +39,13 @@ def test_pad4() raises:
 
 
 def test_checksum_matches_pion() raises:
-    for text in [PION_INIT, PION_INIT_NO_IDATA, PION_COOKIE_ACK, PION_TWO_DATA, PION_SACK]:
+    for text in [
+        PION_INIT,
+        PION_INIT_NO_IDATA,
+        PION_COOKIE_ACK,
+        PION_TWO_DATA,
+        PION_SACK,
+    ]:
         var p = hex_decode(text)
         assert_equal(packet_checksum(Span(p)), stored_checksum(Span(p)))
     # The checksum is stored least significant byte first: e2 67 9a ec.
@@ -161,6 +174,22 @@ def test_rejects_malformed_framing() raises:
     _fix(cut)
     with assert_raises():
         _ = parse_packet(Span(cut))
+
+
+def test_parse_tlvs_bounds() raises:
+    var two = hex_decode("00010005aa0000000002000400")
+    with assert_raises():
+        _ = parse_tlvs(Span(two), 0)
+    var ok = hex_decode("00010005aa00000000020004")
+    var items = parse_tlvs(Span(ok), 0)
+    assert_equal(len(items), 2)
+    assert_equal(items[0].length, 1)
+    assert_equal(items[1].offset, 12)
+    with assert_raises():
+        _ = parse_tlvs(Span(ok), 13)
+    var past = hex_decode("0001ffff")
+    with assert_raises():
+        _ = parse_tlvs(Span(past), 0)
 
 
 def main() raises:

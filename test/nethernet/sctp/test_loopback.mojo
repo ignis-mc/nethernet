@@ -22,7 +22,13 @@ from nethernet.sctp.config import (
 )
 from nethernet.sctp.packet import CHUNK_DATA, CHUNK_FORWARD_TSN, parse_packet
 from nethernet.sctp.sender import fragment_size_for_mtu
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 
 def _connect_both(mut net: Net) raises:
@@ -104,8 +110,17 @@ def test_message_sizes() raises:
     var frag = fragment_size_for_mtu(1200)
     assert_equal(frag, 1156)
     var sizes: List[Int] = [
-        1, 2, frag - 1, frag, frag + 1, 1160, 1161, 2 * frag, 2 * frag + 1,
-        65536, 262144,
+        1,
+        2,
+        frag - 1,
+        frag,
+        frag + 1,
+        1160,
+        1161,
+        2 * frag,
+        2 * frag + 1,
+        65536,
+        262144,
     ]
     for i in range(len(sizes)):
         var m = pattern(sizes[i], i)
@@ -207,10 +222,14 @@ def test_interleaved_streams_keep_per_stream_order() raises:
         var stream = Int(back_got[j].stream_id)
         var i = back_counts[stream] * 4 + stream
         back_counts[stream] += 1
-        assert_true(same_bytes(back_got[j].payload, pattern(20 + 11 * i, 1000 + i)))
+        assert_true(
+            same_bytes(back_got[j].payload, pattern(20 + 11 * i, 1000 + i))
+        )
 
 
-def _reliable_under_loss(seed: UInt64, loss: Int, count: Int, max_size: Int) raises:
+def _reliable_under_loss(
+    seed: UInt64, loss: Int, count: Int, max_size: Int
+) raises:
     var net = new_net(seed)
     _connect_both(net)
     net.loss_ab = loss
@@ -244,7 +263,9 @@ def _reliable_under_loss(seed: UInt64, loss: Int, count: Int, max_size: Int) rai
         var stream = Int(got_a[j].stream_id)
         var i = next_a[stream] * 2 + stream
         next_a[stream] += 1
-        assert_true(same_bytes(got_a[j].payload, pattern(sizes_ba[i], 5000 + i)))
+        assert_true(
+            same_bytes(got_a[j].payload, pattern(sizes_ba[i], 5000 + i))
+        )
     assert_equal(net.a.state(), SCTP_STATE_ESTABLISHED)
     assert_equal(net.b.state(), SCTP_STATE_ESTABLISHED)
     assert_equal(net.a.buffered_amount(), 0)

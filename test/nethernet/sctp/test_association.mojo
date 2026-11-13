@@ -1,12 +1,33 @@
 """Packet-level tests of the association against a hand-built peer."""
 
 from nethernet.sctp.association import Association
-from nethernet.sctp.chunk import (
+from nethernet.sctp.cause import (
     CAUSE_INVALID_STREAM,
     CAUSE_NO_USER_DATA,
     CAUSE_STALE_COOKIE,
     CAUSE_UNRECOGNIZED_CHUNK,
     CAUSE_USER_INITIATED_ABORT,
+    ErrorCause,
+    decode_causes,
+    encode_abort,
+    encode_error,
+)
+from nethernet.sctp.chunk import (
+    InitChunk,
+    SackChunk,
+    decode_data,
+    decode_init,
+    decode_sack,
+    decode_shutdown,
+    encode_cookie_ack,
+    encode_cookie_echo,
+    encode_data,
+    encode_heartbeat,
+    encode_shutdown,
+    encode_shutdown_ack,
+    encode_shutdown_complete,
+)
+from nethernet.sctp.reconfig import (
     PARAM_ADD_OUTGOING_STREAMS,
     PARAM_INCOMING_RESET,
     PARAM_OUTGOING_RESET,
@@ -15,26 +36,9 @@ from nethernet.sctp.chunk import (
     RECONFIG_RESULT_DENIED,
     RECONFIG_RESULT_IN_PROGRESS,
     RECONFIG_RESULT_PERFORMED,
-    ErrorCause,
-    InitChunk,
     ReconfigParam,
-    SackChunk,
-    decode_causes,
-    decode_data,
-    decode_init,
     decode_reconfig,
-    decode_sack,
-    decode_shutdown,
-    encode_abort,
-    encode_cookie_ack,
-    encode_cookie_echo,
-    encode_data,
-    encode_error,
-    encode_heartbeat,
     encode_reconfig,
-    encode_shutdown,
-    encode_shutdown_ack,
-    encode_shutdown_complete,
     outgoing_reset_request,
     reconfig_response,
 )
@@ -76,7 +80,13 @@ from nethernet.sctp.packet import (
     parse_packet,
 )
 from nethernet.wire import bytes_of, hex_decode, hex_encode, string_of
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 comptime LOCAL_TAG = 0x0A0B0C0D
 comptime LOCAL_TSN = 5000
@@ -152,7 +162,9 @@ def _peer_init(extensions: List[UInt8]) -> List[UInt8]:
     return out^
 
 
-def _data(tsn: UInt32, stream: UInt16, ssn: UInt16, flags: UInt8, text: StringSpan) -> List[UInt8]:
+def _data(
+    tsn: UInt32, stream: UInt16, ssn: UInt16, flags: UInt8, text: StringSpan
+) -> List[UInt8]:
     var out = List[UInt8]()
     encode_data(out, tsn, stream, ssn, 53, flags, text.as_bytes())
     return out^
@@ -350,7 +362,9 @@ def test_init_parameters_are_reported() raises:
     # Fixed fields, an unknown "skip and report" parameter, extensions.
     var chunk = _raw_chunk(
         CHUNK_INIT,
-        "1122334400100000ffffffff000003e8" + "c0330006aabb0000" + "8008000682c0",
+        "1122334400100000ffffffff000003e8"
+        + "c0330006aabb0000"
+        + "8008000682c0",
     )
     _feed(a, 0, chunk, 0)
     var replies = _out(a, 0)
@@ -609,7 +623,10 @@ def test_local_abort_packet() raises:
     assert_equal(len(replies), 1)
     assert_equal(_tag(replies[0]), PEER_TAG)
     # The same chunk pion sends for Abort("bye").
-    assert_equal(hex_encode(Span(replies[0])[12 : len(replies[0])]), "0600000b000c000762796500")
+    assert_equal(
+        hex_encode(Span(replies[0])[12 : len(replies[0])]),
+        "0600000b000c000762796500",
+    )
     assert_equal(len(_out(a, 5)), 0)
     # Aborting before the peer is known sends nothing.
     var b = _assoc()
@@ -650,7 +667,9 @@ def test_invalid_stream_is_reported_and_acknowledged() raises:
     var causes = decode_causes(Span(_value(replies[0], 0)))
     assert_true(causes[0].code == CAUSE_INVALID_STREAM)
     assert_equal(hex_encode(Span(causes[0].info)), "ffff0000")
-    assert_equal(decode_sack(Span(_value(replies[0], 1))).cumulative_tsn, PEER_TSN)
+    assert_equal(
+        decode_sack(Span(_value(replies[0], 1))).cumulative_tsn, PEER_TSN
+    )
 
 
 def _reconfig(params: List[ReconfigParam]) -> List[UInt8]:
@@ -659,7 +678,9 @@ def _reconfig(params: List[ReconfigParam]) -> List[UInt8]:
     return out^
 
 
-def _reset_request(seq: UInt32, last_tsn: UInt32, stream: UInt16) -> List[UInt8]:
+def _reset_request(
+    seq: UInt32, last_tsn: UInt32, stream: UInt16
+) -> List[UInt8]:
     var streams: List[UInt16] = [stream]
     var params: List[ReconfigParam] = []
     params.append(outgoing_reset_request(seq, 0, last_tsn, Span(streams)))
@@ -797,7 +818,10 @@ def test_outgoing_stream_reset_is_retransmitted_until_answered() raises:
     a.handle_timeout(1000)
     var second = _out(a, 1000)
     assert_equal(len(second), 1)
-    assert_equal(hex_encode(Span(_value(second[0], 0))), hex_encode(Span(_value(first[1], 0))))
+    assert_equal(
+        hex_encode(Span(_value(second[0], 0))),
+        hex_encode(Span(_value(first[1], 0))),
+    )
     # "In progress" keeps the request alive.
     var params: List[ReconfigParam] = []
     params.append(reconfig_response(LOCAL_TSN, RECONFIG_RESULT_IN_PROGRESS))

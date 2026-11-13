@@ -144,6 +144,29 @@ run_case mojo-to-mojo.anonymous-rejected 1 \
     "$MOJO_SERVER --bind 127.0.0.1:{PORT} --timeout 60" \
     "$MOJO_CLIENT --target 127.0.0.1:{PORT} --anonymous --expect-fail --timeout 30"
 
+echo "== HTTP signaling (the join-by-address path)"
+run_case mojo-to-go.http 1 \
+    "$GO http-listen -bind 127.0.0.1:{PORT} -conns 1 -timeout 60s" \
+    "$MOJO_CLIENT --http 127.0.0.1:{PORT} --sizes 1,1000,70000,300000 --unreliable 4 --timeout 60"
+run_case mojo-to-go.http-anonymous-rejected 1 \
+    "$GO http-listen -bind 127.0.0.1:{PORT} -timeout 60s" \
+    "$MOJO_CLIENT --http 127.0.0.1:{PORT} --anonymous --expect-fail --timeout 30"
+run_case go-to-mojo.http 1 \
+    "$MOJO_SERVER --http 127.0.0.1:{PORT} --conns 1 --timeout 60" \
+    "$GO http-dial -url http://127.0.0.1:{PORT} -identity -sizes 1,1000,70000,300000 -unreliable 4 -timeout 60s"
+run_case go-to-mojo.http-anonymous 1 \
+    "$MOJO_SERVER --http 127.0.0.1:{PORT} --allow-anonymous --conns 1 --timeout 60" \
+    "$GO http-dial -url http://127.0.0.1:{PORT} -sizes 1,1000 -bye -timeout 60s"
+run_case go-to-mojo.http-anonymous-rejected 1 \
+    "$MOJO_SERVER --http 127.0.0.1:{PORT} --timeout 60" \
+    "$GO http-dial -url http://127.0.0.1:{PORT} -expect-fail -timeout 30s"
+run_case go-to-mojo.http-three-clients 3 \
+    "$MOJO_SERVER --http 127.0.0.1:{PORT} --conns 3 --timeout 60" \
+    "$GO http-dial -url http://127.0.0.1:{PORT} -identity -sizes 1,70000 -timeout 60s"
+run_case mojo-to-mojo.http 1 \
+    "$MOJO_SERVER --http 127.0.0.1:{PORT} --conns 1 --timeout 60" \
+    "$MOJO_CLIENT --http 127.0.0.1:{PORT} --sizes 1,1000,70000 --unreliable 4 --timeout 60"
+
 echo "== control: go-nethernet both sides"
 run_case go-to-go.control 1 \
     "$GO listen -bind 127.0.0.1:{PORT} -conns 1 -timeout 60s" \

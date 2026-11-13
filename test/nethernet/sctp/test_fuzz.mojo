@@ -36,7 +36,9 @@ def _busy_session(seed: UInt64, capture: Bool) raises -> Net:
     net.loss_ab = 150
     for i in range(30):
         var m = pattern(40 + 211 * i, i)
-        net.a.send(UInt16(i % 3), 53, Span(m), i % 2 == 0, -1 if i % 3 != 0 else 0)
+        net.a.send(
+            UInt16(i % 3), 53, Span(m), i % 2 == 0, -1 if i % 3 != 0 else 0
+        )
         net.b.send(1, 53, Span(m)[0:20], False, -1)
     net.a.reset_stream(2)
     net.run(60000)
@@ -108,7 +110,22 @@ def _random_packet(mut rng: Rng, tag: UInt32) -> List[UInt8]:
         # ABORT, SACK and SHUTDOWN with random contents end the association
         # almost at once, so they are drawn less often.
         var kinds: List[UInt8] = [
-            0, 1, 2, 4, 5, 8, 9, 10, 11, 14, 130, 192, 64, 15, 0x84, 0xC1
+            0,
+            1,
+            2,
+            4,
+            5,
+            8,
+            9,
+            10,
+            11,
+            14,
+            130,
+            192,
+            64,
+            15,
+            0x84,
+            0xC1,
         ]
         var kind = kinds[rng.below(len(kinds))]
         if rng.chance(30):
@@ -199,7 +216,12 @@ def test_mutated_pion_packets_in_every_handshake_state() raises:
     for round in range(40):
         var secret = rng.bytes(16)
         # Use a tag from the recordings so that some packets pass the check.
-        var tags: List[UInt32] = [0x6521BE70, 0xAC060E97, 0xAA764BE4, 0x817B5835]
+        var tags: List[UInt32] = [
+            0x6521BE70,
+            0xAC060E97,
+            0xAA764BE4,
+            0x817B5835,
+        ]
         var a = Association(
             SctpConfig(tags[round % 4], UInt32(rng.next() >> 32), Span(secret))
         )

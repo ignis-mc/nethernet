@@ -7,6 +7,7 @@ channel. The message `BYE` makes the server close that connection.
 
 Options:
     --bind ADDR:PORT   discovery address (default 0.0.0.0:7551)
+    --http ADDR:PORT   serve HTTP signaling here instead of LAN discovery
     --network-id N     network ID to announce (default random)
     --bind-ip IP       local address for connections (default: default route)
     --allow-anonymous  accept offers without an identity assertion
@@ -21,6 +22,8 @@ from nethernet.listener import ListenConfig, Listener
 from nethernet.os.addr import SocketAddr
 from nethernet.os.poll import PollSet
 from nethernet.os.time import monotonic_ms
+from nethernet.signaling.endpoint import EndpointServer, EndpointStatus
+from nethernet.signaling.signal import Signaling
 from std.sys import argv
 
 
@@ -39,26 +42,10 @@ def flag(name: StringSpan) -> Bool:
     return False
 
 
-def main() raises:
-    var bind = SocketAddr.parse(option("--bind", "0.0.0.0:7551"))
-    var network_id = UInt64(Int(option("--network-id", "0")))
-    var max_conns = Int(option("--conns", "0"))
-    var timeout_s = Int(option("--timeout", "0"))
-    var bind_ip = option("--bind-ip", "")
-
-    var discovery = DiscoveryListener(bind, network_id, None)
-    var data = ServerData()
-    data.server_name = "nethernet (Mojo)"
-    data.level_name = "echo"
-    data.max_player_count = 8
-    discovery.set_server_data(data)
-    var config = ListenConfig()
-    config.allow_anonymous = flag("--allow-anonymous")
-    if bind_ip.byte_length() > 0:
-        config.conn.bind_ip = SocketAddr.parse_ip(bind_ip)
-    var listener = Listener[DiscoveryListener](discovery^, config)
-    print("READY", listener.signaling().local_addr().port, listener.network_id())
-
+def serve[S: Signaling](
+    mut listener: Listener[S], max_conns: Int, timeout_s: Int
+) raises:
+    """Accepts connections and echoes messages until `max_conns` have closed."""
     var conns = List[Conn]()
     var closed = 0
     var started = monotonic_ms()
@@ -83,7 +70,13 @@ def main() raises:
                 if message is None:
                     break
                 var bytes = message.take()
-                if len(bytes) == 3 and bytes[0] == 0x42 and bytes[1] == 0x59 and bytes[2] == 0x45:
+                # "BYE" asks the server to hang up.
+                if (
+                    len(bytes) == 3
+                    and bytes[0] == 0x42
+                    and bytes[1] == 0x59
+                    and bytes[2] == 0x45
+                ):
                     conns[i].close()
                     break
                 conns[i].send(Span(bytes), RELIABLE)
@@ -102,11 +95,48 @@ def main() raises:
             i += 1
 
         var set = PollSet()
-        _ = set.add(listener.signaling().poll_fd())
-        var wake = now + 50
+        var signaling_fd = listener.signaling().poll_fd()
+        if signaling_fd >= 0:
+            _ = set.add(signaling_fd)
+        var wake = now + 20
         for j in range(len(conns)):
             _ = set.add(conns[j].fd())
             wake = min(wake, conns[j].next_timeout())
         wake = min(wake, listener.next_timeout())
         _ = set.wait(max(0, wake - monotonic_ms()))
     print("DONE")
+
+
+def main() raises:
+    var max_conns = Int(option("--conns", "0"))
+    var timeout_s = Int(option("--timeout", "0"))
+    var bind_ip = option("--bind-ip", "")
+    var config = ListenConfig()
+    config.allow_anonymous = flag("--allow-anonymous")
+    if bind_ip.byte_length() > 0:
+        config.conn.bind_ip = SocketAddr.parse_ip(bind_ip)
+
+    var http = option("--http", "")
+    if http.byte_length() > 0:
+        var server = EndpointServer(SocketAddr.parse(http))
+        var status = EndpointStatus()
+        status.name = "nethernet (Mojo)"
+        status.level = "echo"
+        status.max_players = 8
+        server.set_status(status)
+        print("READY", server.local_addr().port, server.network_id())
+        var listener = Listener[EndpointServer](server^, config)
+        serve(listener, max_conns, timeout_s)
+        return
+
+    var bind = SocketAddr.parse(option("--bind", "0.0.0.0:7551"))
+    var network_id = UInt64(Int(option("--network-id", "0")))
+    var discovery = DiscoveryListener(bind, network_id, None)
+    var data = ServerData()
+    data.server_name = "nethernet (Mojo)"
+    data.level_name = "echo"
+    data.max_player_count = 8
+    discovery.set_server_data(data)
+    print("READY", discovery.local_addr().port, discovery.network_id())
+    var listener = Listener[DiscoveryListener](discovery^, config)
+    serve(listener, max_conns, timeout_s)

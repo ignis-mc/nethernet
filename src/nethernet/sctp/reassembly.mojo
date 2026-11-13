@@ -162,8 +162,7 @@ struct TsnTracker(Movable):
             var present = False
             if off <= span:
                 present = (
-                    self._ring[Int((self._cum + UInt32(off)) & self._mask)]
-                    != 0
+                    self._ring[Int((self._cum + UInt32(off)) & self._mask)] != 0
                 )
             if present:
                 seen += 1
@@ -417,9 +416,7 @@ struct Reassembly(Movable):
         if total > self._max_message_size:
             return REASSEMBLY_TOO_LARGE
 
-        if not (
-            self._chunks[start].beginning() and self._chunks[end].ending()
-        ):
+        if not (self._chunks[start].beginning() and self._chunks[end].ending()):
             return REASSEMBLY_OK
         if self._chunks[start].unordered():
             out.append(self._take_run(start, True))

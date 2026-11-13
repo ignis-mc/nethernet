@@ -15,7 +15,7 @@ AUTH, ASCONF and sending HEARTBEAT.
 from std.collections import Deque
 
 from ..wire import put_u32, string_of
-from .chunk import (
+from .cause import (
     CAUSE_INVALID_MANDATORY_PARAMETER,
     CAUSE_INVALID_STREAM,
     CAUSE_NO_USER_DATA,
@@ -24,6 +24,27 @@ from .chunk import (
     CAUSE_STALE_COOKIE,
     CAUSE_UNRECOGNIZED_CHUNK,
     CAUSE_USER_INITIATED_ABORT,
+    ErrorCause,
+    decode_causes,
+    encode_abort,
+    encode_error,
+)
+from .chunk import (
+    InitChunk,
+    SackChunk,
+    decode_data,
+    decode_forward_tsn,
+    decode_init,
+    decode_sack,
+    decode_shutdown,
+    encode_cookie_ack,
+    encode_cookie_echo,
+    encode_heartbeat,
+    encode_shutdown,
+    encode_shutdown_ack,
+    encode_shutdown_complete,
+)
+from .reconfig import (
     PARAM_INCOMING_RESET,
     PARAM_OUTGOING_RESET,
     PARAM_RECONFIG_RESPONSE,
@@ -31,26 +52,9 @@ from .chunk import (
     RECONFIG_RESULT_DENIED,
     RECONFIG_RESULT_IN_PROGRESS,
     RECONFIG_RESULT_PERFORMED,
-    ErrorCause,
-    InitChunk,
     ReconfigParam,
-    SackChunk,
-    decode_causes,
-    decode_data,
-    decode_forward_tsn,
-    decode_init,
     decode_reconfig,
-    decode_sack,
-    decode_shutdown,
-    encode_abort,
-    encode_cookie_ack,
-    encode_cookie_echo,
-    encode_error,
-    encode_heartbeat,
     encode_reconfig,
-    encode_shutdown,
-    encode_shutdown_ack,
-    encode_shutdown_complete,
     outgoing_reset_request,
     reconfig_response,
 )
@@ -629,7 +633,9 @@ struct Association(Movable):
         )
 
     def _advertised_rwnd(self) -> Int:
-        var free = Int(self._cfg.a_rwnd) - self._reasm.cost() - self._event_bytes
+        var free = (
+            Int(self._cfg.a_rwnd) - self._reasm.cost() - self._event_bytes
+        )
         if free < 0:
             return 0
         return free
@@ -986,7 +992,9 @@ struct Association(Movable):
             self._stats.messages_in += 1
             self._push_event(ev^)
 
-    def _on_data(mut self, value: Span[UInt8, _], flags: UInt8, now_ms: Int) raises:
+    def _on_data(
+        mut self, value: Span[UInt8, _], flags: UInt8, now_ms: Int
+    ) raises:
         if not self._can_receive_data():
             self._stats.chunks_dropped += 1
             return
@@ -1029,7 +1037,10 @@ struct Association(Movable):
             var report = List[UInt8]()
             var causes: List[ErrorCause] = []
             var info: List[UInt8] = [
-                UInt8(chunk.stream_id >> 8), UInt8(chunk.stream_id & 0xFF), 0, 0
+                UInt8(chunk.stream_id >> 8),
+                UInt8(chunk.stream_id & 0xFF),
+                0,
+                0,
             ]
             causes.append(ErrorCause(CAUSE_INVALID_STREAM, Span(info)))
             encode_error(report, Span(causes))
@@ -1267,7 +1278,9 @@ struct Association(Movable):
                 self._peer_reconf_result = RECONFIG_RESULT_DENIED
                 self._queue_reconfig_response(seq, RECONFIG_RESULT_DENIED)
 
-    def _on_reconfig_response(mut self, seq: UInt32, result: UInt32, now_ms: Int):
+    def _on_reconfig_response(
+        mut self, seq: UInt32, result: UInt32, now_ms: Int
+    ):
         if not self._reconf_active or seq != self._reconf_seq:
             return
         if result == RECONFIG_RESULT_IN_PROGRESS:
@@ -1348,9 +1361,7 @@ struct Association(Movable):
                         t"aborted by peer: {_printable(Span(causes[0].info))}"
                     )
                 else:
-                    reason = String(
-                        t"aborted by peer (cause {causes[0].code})"
-                    )
+                    reason = String(t"aborted by peer (cause {causes[0].code})")
         except:
             pass
         self._close(reason^)

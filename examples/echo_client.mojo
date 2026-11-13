@@ -8,6 +8,7 @@ unchanged, then optionally exchanges messages on the unreliable channel.
 Options:
     --target ADDR:PORT  where to send discovery requests
                         (default 255.255.255.255:7551)
+    --http ADDR:PORT    use HTTP signaling with this server instead
     --sizes A,B,C       reliable message sizes (default 1,2,100,1000)
     --unreliable N      unreliable messages to exchange (default 0)
     --bind-ip IP        local address for the connection (default route)
@@ -18,13 +19,15 @@ Options:
     --timeout SECONDS   give up after this long (default 30)
 """
 
-from nethernet.conn import RELIABLE, UNRELIABLE
+from nethernet.conn import RELIABLE, UNRELIABLE, Conn
 from nethernet.dialer import DialConfig, dial
 from nethernet.discovery.listener import DiscoveryListener
 from nethernet.discovery.server_data import ServerData
 from nethernet.os.addr import SocketAddr
 from nethernet.os.poll import wait_readable
 from nethernet.os.time import monotonic_ms
+from nethernet.signaling.endpoint import EndpointClient
+from nethernet.signaling.signal import Signaling
 from std.sys import argv
 
 
@@ -51,48 +54,12 @@ def payload(size: Int) -> List[UInt8]:
     return out^
 
 
-def main() raises:
-    var target = SocketAddr.parse(option("--target", "255.255.255.255:7551"))
-    var timeout_ms = Int(option("--timeout", "30")) * 1000
-    var unreliable_count = Int(option("--unreliable", "0"))
-    var bind_ip = option("--bind-ip", "")
-    var deadline = monotonic_ms() + timeout_ms
-
-    var discovery = DiscoveryListener(SocketAddr(0, 0), 0, target)
-    var network_id = String()
-    while network_id.byte_length() == 0:
-        if monotonic_ms() > deadline:
-            raise Error("no server answered discovery")
-        discovery.service(monotonic_ms())
-        for server in discovery.responses():
-            var data = ServerData.decode(Span(server.data))
-            print("FOUND", server.network_id, data.server_name, data.level_name)
-            network_id = String(server.network_id)
-            break
-        _ = wait_readable(discovery.poll_fd(), 100)
-
-    var config = DialConfig()
-    config.timeout_ms = max(1000, deadline - monotonic_ms())
-    if bind_ip.byte_length() > 0:
-        config.conn.bind_ip = SocketAddr.parse_ip(bind_ip)
-    config.anonymous = flag("--anonymous")
-    config.allow_identityless_server = flag("--allow-identityless")
-    if flag("--expect-fail"):
-        var failed = False
-        try:
-            var unexpected = dial(discovery, network_id, config)
-            unexpected.abort()
-        except e:
-            failed = True
-            print("FAILED_AS_EXPECTED", e)
-        if not failed:
-            raise Error("dial succeeded but was expected to fail")
-        print("OK")
-        return
-    var conn = dial(discovery, network_id, config)
+def exercise(mut conn: Conn, deadline: Int) raises:
+    """Checks echoes on an open connection, then closes it."""
     print("CONNECTED", conn.remote_addr().value())
     if len(conn.peer_public_key()) > 0:
         print("PEER_IDENTITY", len(conn.peer_public_key()), "byte P-384 key")
+    var unreliable_count = Int(option("--unreliable", "0"))
 
     for field in option("--sizes", "1,2,100,1000").split(","):
         if field.byte_length() == 0:
@@ -143,3 +110,57 @@ def main() raises:
     else:
         conn.close()
     print("OK")
+
+
+def connect[S: Signaling](
+    mut signaling: S, network_id: StringSpan, deadline: Int
+) raises:
+    """Dials `network_id` and runs the echo checks (or expects rejection)."""
+    var config = DialConfig()
+    config.timeout_ms = max(1000, deadline - monotonic_ms())
+    var bind_ip = option("--bind-ip", "")
+    if bind_ip.byte_length() > 0:
+        config.conn.bind_ip = SocketAddr.parse_ip(bind_ip)
+    config.anonymous = flag("--anonymous")
+    config.allow_identityless_server = flag("--allow-identityless")
+    if flag("--expect-fail"):
+        var failed = False
+        try:
+            var unexpected = dial(signaling, network_id, config)
+            unexpected.abort()
+        except e:
+            failed = True
+            print("FAILED_AS_EXPECTED", e)
+        if not failed:
+            raise Error("dial succeeded but was expected to fail")
+        print("OK")
+        return
+    var conn = dial(signaling, network_id, config)
+    exercise(conn, deadline)
+
+
+def main() raises:
+    var timeout_ms = Int(option("--timeout", "30")) * 1000
+    var deadline = monotonic_ms() + timeout_ms
+
+    var http = option("--http", "")
+    if http.byte_length() > 0:
+        var client = EndpointClient(SocketAddr.parse(http))
+        print("STATUS", client.probe(5000))
+        connect(client, client.url(), deadline)
+        return
+
+    var target = SocketAddr.parse(option("--target", "255.255.255.255:7551"))
+    var discovery = DiscoveryListener(SocketAddr(0, 0), 0, target)
+    var network_id = String()
+    while network_id.byte_length() == 0:
+        if monotonic_ms() > deadline:
+            raise Error("no server answered discovery")
+        discovery.service(monotonic_ms())
+        for server in discovery.responses():
+            var data = ServerData.decode(Span(server.data))
+            print("FOUND", server.network_id, data.server_name, data.level_name)
+            network_id = String(server.network_id)
+            break
+        _ = wait_readable(discovery.poll_fd(), 100)
+    connect(discovery, network_id, deadline)

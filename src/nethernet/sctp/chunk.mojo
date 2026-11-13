@@ -2,35 +2,28 @@
 
 Decoders take the chunk value located by `parse_packet()` and raise on
 malformed input. Encoders append one complete, padded chunk to a caller-owned
-buffer. Covered: RFC 9260 (INIT, INIT ACK, COOKIE ECHO, COOKIE ACK, DATA,
-SACK, HEARTBEAT, HEARTBEAT ACK, ABORT, SHUTDOWN, SHUTDOWN ACK, SHUTDOWN
-COMPLETE, ERROR), RFC 3758 (FORWARD-TSN) and RFC 6525 (RE-CONFIG).
+buffer. Covered here: RFC 9260 INIT, INIT ACK, COOKIE ECHO, COOKIE ACK, DATA,
+SACK, HEARTBEAT, HEARTBEAT ACK, SHUTDOWN, SHUTDOWN ACK, SHUTDOWN COMPLETE and
+RFC 3758 FORWARD-TSN. ABORT and ERROR are in `cause`, RE-CONFIG in
+`reconfig`.
 """
 
-from ..wire import (
-    Reader,
-    get_u16,
-    get_u32,
-    put_bytes,
-    put_u16,
-    put_u32,
-    set_u16,
-)
+from ..wire import Reader, get_u16, get_u32, put_bytes, put_u16, put_u32
 from .packet import (
-    CHUNK_ABORT,
     CHUNK_COOKIE_ACK,
     CHUNK_COOKIE_ECHO,
     CHUNK_DATA,
-    CHUNK_ERROR,
     CHUNK_FORWARD_TSN,
-    CHUNK_RECONFIG,
     CHUNK_SACK,
     CHUNK_SHUTDOWN,
     CHUNK_SHUTDOWN_ACK,
     CHUNK_SHUTDOWN_COMPLETE,
+    Tlv,
     begin_chunk,
+    begin_param,
     end_chunk,
-    pad4,
+    end_param,
+    parse_tlvs,
 )
 
 comptime DATA_FLAG_END = 0x01
@@ -54,121 +47,6 @@ comptime PARAM_SUPPORTED_EXTENSIONS = 0x8008
 """Parameter type of Supported Extensions (RFC 5061)."""
 comptime PARAM_FORWARD_TSN_SUPPORTED = 0xC000
 """Parameter type of Forward-TSN-Supported (RFC 3758)."""
-
-comptime PARAM_OUTGOING_RESET = 13
-"""RE-CONFIG parameter: Outgoing SSN Reset Request."""
-comptime PARAM_INCOMING_RESET = 14
-"""RE-CONFIG parameter: Incoming SSN Reset Request."""
-comptime PARAM_SSN_TSN_RESET = 15
-"""RE-CONFIG parameter: SSN/TSN Reset Request."""
-comptime PARAM_RECONFIG_RESPONSE = 16
-"""RE-CONFIG parameter: Re-configuration Response."""
-comptime PARAM_ADD_OUTGOING_STREAMS = 17
-"""RE-CONFIG parameter: Add Outgoing Streams Request."""
-comptime PARAM_ADD_INCOMING_STREAMS = 18
-"""RE-CONFIG parameter: Add Incoming Streams Request."""
-
-comptime RECONFIG_RESULT_NOTHING_TO_DO = 0
-"""Re-configuration result: success, nothing to do."""
-comptime RECONFIG_RESULT_PERFORMED = 1
-"""Re-configuration result: success, performed."""
-comptime RECONFIG_RESULT_DENIED = 2
-"""Re-configuration result: denied."""
-comptime RECONFIG_RESULT_WRONG_SSN = 3
-"""Re-configuration result: error, wrong SSN."""
-comptime RECONFIG_RESULT_ALREADY_IN_PROGRESS = 4
-"""Re-configuration result: error, request already in progress."""
-comptime RECONFIG_RESULT_BAD_SEQUENCE = 5
-"""Re-configuration result: error, bad sequence number."""
-comptime RECONFIG_RESULT_IN_PROGRESS = 6
-"""Re-configuration result: in progress."""
-
-comptime CAUSE_INVALID_STREAM = 1
-"""Error cause: Invalid Stream Identifier."""
-comptime CAUSE_STALE_COOKIE = 3
-"""Error cause: Stale Cookie."""
-comptime CAUSE_OUT_OF_RESOURCE = 4
-"""Error cause: Out of Resource."""
-comptime CAUSE_UNRECOGNIZED_CHUNK = 6
-"""Error cause: Unrecognized Chunk Type."""
-comptime CAUSE_INVALID_MANDATORY_PARAMETER = 7
-"""Error cause: Invalid Mandatory Parameter."""
-comptime CAUSE_NO_USER_DATA = 9
-"""Error cause: No User Data."""
-comptime CAUSE_USER_INITIATED_ABORT = 12
-"""Error cause: User-Initiated Abort."""
-comptime CAUSE_PROTOCOL_VIOLATION = 13
-"""Error cause: Protocol Violation."""
-
-
-struct Tlv(ImplicitlyCopyable):
-    """The position of one type-length-value item inside a chunk value."""
-
-    var kind: UInt16
-    """The parameter or cause type."""
-    var offset: Int
-    """The offset of the item value."""
-    var length: Int
-    """The length of the item value, without header or padding."""
-
-    def __init__(out self, kind: UInt16, offset: Int, length: Int):
-        """Creates an item reference.
-
-        Args:
-            kind: The parameter or cause type.
-            offset: The offset of the item value.
-            length: The length of the item value.
-        """
-        self.kind = kind
-        self.offset = offset
-        self.length = length
-
-
-def parse_tlvs(data: Span[UInt8, _], start: Int) raises -> List[Tlv]:
-    """Splits a run of parameters or error causes into items.
-
-    Every item but the last must be padded to 4 bytes.
-
-    Args:
-        data: The chunk value.
-        start: The offset of the first item.
-
-    Returns:
-        The location of every item, in wire order.
-
-    Raises:
-        Error: If an item header is truncated or a length is below 4 or runs
-            past the end.
-    """
-    var items = List[Tlv]()
-    var size = len(data)
-    var pos = start
-    if pos > size:
-        raise Error("sctp: chunk shorter than its fixed fields")
-    while pos < size:
-        if size - pos < 4:
-            raise Error("sctp: truncated parameter header")
-        var length = Int(get_u16(data, pos + 2))
-        if length < 4 or pos + length > size:
-            raise Error("sctp: bad parameter length")
-        items.append(Tlv(get_u16(data, pos), pos + 4, length - 4))
-        pos += pad4(length)
-    return items^
-
-
-def _begin_param(mut out: List[UInt8], chunk_start: Int, kind: UInt16) -> Int:
-    # The previous item is padded only once another one follows, so that the
-    # chunk length leaves out the padding of the final item.
-    while (len(out) - chunk_start) % 4 != 0:
-        out.append(0)
-    var start = len(out)
-    put_u16(out, kind)
-    put_u16(out, 0)
-    return start
-
-
-def _end_param(mut out: List[UInt8], start: Int):
-    set_u16(out, start + 2, UInt16(len(out) - start))
 
 
 struct InitChunk(Copyable):
@@ -251,16 +129,16 @@ struct InitChunk(Copyable):
         put_u16(out, self.num_inbound_streams)
         put_u32(out, self.initial_tsn)
         if len(self.cookie) > 0:
-            var p = _begin_param(out, start, PARAM_STATE_COOKIE)
+            var p = begin_param(out, start, PARAM_STATE_COOKIE)
             put_bytes(out, Span(self.cookie))
-            _end_param(out, p)
+            end_param(out, p)
         if self.forward_tsn_supported:
-            var p = _begin_param(out, start, PARAM_FORWARD_TSN_SUPPORTED)
-            _end_param(out, p)
+            var p = begin_param(out, start, PARAM_FORWARD_TSN_SUPPORTED)
+            end_param(out, p)
         if len(self.extensions) > 0:
-            var p = _begin_param(out, start, PARAM_SUPPORTED_EXTENSIONS)
+            var p = begin_param(out, start, PARAM_SUPPORTED_EXTENSIONS)
             put_bytes(out, Span(self.extensions))
-            _end_param(out, p)
+            end_param(out, p)
         if len(self.unrecognized) > 0:
             var items = List[Tlv]()
             try:
@@ -268,14 +146,14 @@ struct InitChunk(Copyable):
             except:
                 pass
             for item in items:
-                var p = _begin_param(out, start, PARAM_UNRECOGNIZED)
+                var p = begin_param(out, start, PARAM_UNRECOGNIZED)
                 put_bytes(
                     out,
                     Span(self.unrecognized)[
                         item.offset - 4 : item.offset + item.length
                     ],
                 )
-                _end_param(out, p)
+                end_param(out, p)
         end_chunk(out, start)
 
 
@@ -627,241 +505,6 @@ def decode_forward_tsn(value: Span[UInt8, _]) raises -> ForwardTsnChunk:
         chunk.stream_ids.append(r.u16())
         chunk.ssns.append(r.u16())
     return chunk^
-
-
-struct ReconfigParam(Copyable):
-    """One parameter of a RE-CONFIG chunk (RFC 6525)."""
-
-    var kind: UInt16
-    """The parameter type, one of the `PARAM_*` re-configuration types."""
-    var request_seq: UInt32
-    """The request sequence number, or the response sequence number."""
-    var response_seq: UInt32
-    """Outgoing reset only: the last request sequence number seen."""
-    var last_tsn: UInt32
-    """Outgoing reset only: the sender's last assigned TSN."""
-    var streams: List[UInt16]
-    """Reset requests only: the affected streams; empty means all."""
-    var result: UInt32
-    """Response only: one of the `RECONFIG_RESULT_*` values."""
-    var count: UInt16
-    """Add-streams requests only: the number of new streams."""
-
-    def __init__(out self, kind: UInt16, request_seq: UInt32):
-        """Creates a parameter with every other field zero.
-
-        Args:
-            kind: The parameter type.
-            request_seq: The request or response sequence number.
-        """
-        self.kind = kind
-        self.request_seq = request_seq
-        self.response_seq = 0
-        self.last_tsn = 0
-        self.streams = List[UInt16]()
-        self.result = 0
-        self.count = 0
-
-    def encode(self, mut out: List[UInt8], chunk_start: Int):
-        """Appends the parameter inside a RE-CONFIG chunk being built.
-
-        Args:
-            out: The buffer to append to.
-            chunk_start: The offset of the enclosing chunk header.
-        """
-        var p = _begin_param(out, chunk_start, self.kind)
-        put_u32(out, self.request_seq)
-        if self.kind == PARAM_OUTGOING_RESET:
-            put_u32(out, self.response_seq)
-            put_u32(out, self.last_tsn)
-            for s in self.streams:
-                put_u16(out, s)
-        elif self.kind == PARAM_INCOMING_RESET:
-            for s in self.streams:
-                put_u16(out, s)
-        elif self.kind == PARAM_RECONFIG_RESPONSE:
-            put_u32(out, self.result)
-        elif (
-            self.kind == PARAM_ADD_OUTGOING_STREAMS
-            or self.kind == PARAM_ADD_INCOMING_STREAMS
-        ):
-            put_u16(out, self.count)
-            put_u16(out, 0)
-        _end_param(out, p)
-
-
-def outgoing_reset_request(
-    request_seq: UInt32,
-    response_seq: UInt32,
-    last_tsn: UInt32,
-    streams: Span[UInt16, _],
-) -> ReconfigParam:
-    """Builds an Outgoing SSN Reset Request parameter.
-
-    Args:
-        request_seq: The sender's request sequence number.
-        response_seq: The last request sequence number seen from the peer.
-        last_tsn: The sender's last assigned TSN.
-        streams: The outgoing streams to reset.
-
-    Returns:
-        The parameter.
-    """
-    var p = ReconfigParam(PARAM_OUTGOING_RESET, request_seq)
-    p.response_seq = response_seq
-    p.last_tsn = last_tsn
-    p.streams = List[UInt16](streams)
-    return p^
-
-
-def reconfig_response(response_seq: UInt32, result: UInt32) -> ReconfigParam:
-    """Builds a Re-configuration Response parameter.
-
-    Args:
-        response_seq: The sequence number of the request being answered.
-        result: One of the `RECONFIG_RESULT_*` values.
-
-    Returns:
-        The parameter.
-    """
-    var p = ReconfigParam(PARAM_RECONFIG_RESPONSE, response_seq)
-    p.result = result
-    return p^
-
-
-def encode_reconfig(mut out: List[UInt8], params: Span[ReconfigParam, _]):
-    """Appends a RE-CONFIG chunk.
-
-    Args:
-        out: The buffer to append to.
-        params: The parameters, at most two per RFC 6525.
-    """
-    var start = begin_chunk(out, CHUNK_RECONFIG, 0)
-    for p in params:
-        p.encode(out, start)
-    end_chunk(out, start)
-
-
-def decode_reconfig(value: Span[UInt8, _]) raises -> List[ReconfigParam]:
-    """Decodes the value of a RE-CONFIG chunk.
-
-    Parameters of unknown type are returned with only `kind` set.
-
-    Args:
-        value: The chunk value.
-
-    Returns:
-        The parameters in wire order.
-
-    Raises:
-        Error: If a parameter is truncated.
-    """
-    var params = List[ReconfigParam]()
-    var items = parse_tlvs(value, 0)
-    for item in items:
-        var r = Reader(value[item.offset : item.offset + item.length])
-        if item.kind < PARAM_OUTGOING_RESET or (
-            item.kind > PARAM_ADD_INCOMING_STREAMS
-        ):
-            params.append(ReconfigParam(item.kind, 0))
-            continue
-        var p = ReconfigParam(item.kind, r.u32())
-        if item.kind == PARAM_OUTGOING_RESET:
-            p.response_seq = r.u32()
-            p.last_tsn = r.u32()
-        if item.kind == PARAM_OUTGOING_RESET or (
-            item.kind == PARAM_INCOMING_RESET
-        ):
-            if r.remaining() % 2 != 0:
-                raise Error("sctp: reset request ends inside a stream id")
-            while r.remaining() > 0:
-                p.streams.append(r.u16())
-        elif item.kind == PARAM_RECONFIG_RESPONSE:
-            p.result = r.u32()
-        elif (
-            item.kind == PARAM_ADD_OUTGOING_STREAMS
-            or item.kind == PARAM_ADD_INCOMING_STREAMS
-        ):
-            p.count = r.u16()
-        params.append(p^)
-    return params^
-
-
-struct ErrorCause(Copyable):
-    """One error cause of an ABORT or ERROR chunk."""
-
-    var code: UInt16
-    """The cause code, such as `CAUSE_USER_INITIATED_ABORT`."""
-    var info: List[UInt8]
-    """The cause-specific information."""
-
-    def __init__(out self, code: UInt16, info: Span[UInt8, _]):
-        """Creates a cause, copying its information.
-
-        Args:
-            code: The cause code.
-            info: The cause-specific information.
-        """
-        self.code = code
-        self.info = List[UInt8](info)
-
-
-def decode_causes(value: Span[UInt8, _]) raises -> List[ErrorCause]:
-    """Decodes the error causes of an ABORT or ERROR chunk.
-
-    Args:
-        value: The chunk value.
-
-    Returns:
-        The causes in wire order.
-
-    Raises:
-        Error: If a cause is truncated.
-    """
-    var causes = List[ErrorCause]()
-    var items = parse_tlvs(value, 0)
-    for item in items:
-        causes.append(
-            ErrorCause(
-                item.kind, value[item.offset : item.offset + item.length]
-            )
-        )
-    return causes^
-
-
-def _encode_causes(
-    mut out: List[UInt8], kind: UInt8, flags: UInt8, causes: Span[ErrorCause, _]
-):
-    var start = begin_chunk(out, kind, flags)
-    for c in causes:
-        var p = _begin_param(out, start, c.code)
-        put_bytes(out, Span(c.info))
-        _end_param(out, p)
-    end_chunk(out, start)
-
-
-def encode_abort(
-    mut out: List[UInt8], t_bit: Bool, causes: Span[ErrorCause, _]
-):
-    """Appends an ABORT chunk.
-
-    Args:
-        out: The buffer to append to.
-        t_bit: Whether the packet reflects the peer's verification tag
-            instead of carrying the tag the peer expects.
-        causes: The error causes to report.
-    """
-    _encode_causes(out, CHUNK_ABORT, UInt8(1) if t_bit else UInt8(0), causes)
-
-
-def encode_error(mut out: List[UInt8], causes: Span[ErrorCause, _]):
-    """Appends an ERROR chunk.
-
-    Args:
-        out: The buffer to append to.
-        causes: The error causes to report.
-    """
-    _encode_causes(out, CHUNK_ERROR, 0, causes)
 
 
 def encode_cookie_echo(mut out: List[UInt8], cookie: Span[UInt8, _]):

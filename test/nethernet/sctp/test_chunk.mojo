@@ -1,37 +1,40 @@
-from nethernet.sctp.chunk import (
+from nethernet.sctp.cause import (
     CAUSE_USER_INITIATED_ABORT,
+    ErrorCause,
+    decode_causes,
+    encode_abort,
+    encode_error,
+)
+from nethernet.sctp.chunk import (
     DATA_FLAG_BEGIN,
     DATA_FLAG_END,
     DATA_FLAG_UNORDERED,
+    DataChunk,
+    ForwardTsnChunk,
+    GapBlock,
+    InitChunk,
+    SackChunk,
+    decode_data,
+    decode_forward_tsn,
+    decode_init,
+    decode_sack,
+    decode_shutdown,
+    encode_cookie_ack,
+    encode_cookie_echo,
+    encode_heartbeat,
+    encode_shutdown,
+    encode_shutdown_ack,
+    encode_shutdown_complete,
+)
+from nethernet.sctp.reconfig import (
     PARAM_INCOMING_RESET,
     PARAM_OUTGOING_RESET,
     PARAM_RECONFIG_RESPONSE,
     RECONFIG_RESULT_PERFORMED,
-    DataChunk,
-    ErrorCause,
-    ForwardTsnChunk,
-    GapBlock,
-    InitChunk,
     ReconfigParam,
-    SackChunk,
-    decode_causes,
-    decode_data,
-    decode_forward_tsn,
-    decode_init,
     decode_reconfig,
-    decode_sack,
-    decode_shutdown,
-    encode_abort,
-    encode_cookie_ack,
-    encode_cookie_echo,
-    encode_error,
-    encode_heartbeat,
     encode_reconfig,
-    encode_shutdown,
-    encode_shutdown_ack,
-    encode_shutdown_complete,
     outgoing_reset_request,
-    parse_tlvs,
     reconfig_response,
 )
 from nethernet.sctp.packet import (
@@ -45,9 +48,16 @@ from nethernet.sctp.packet import (
     CHUNK_RECONFIG,
     CHUNK_SACK,
     parse_packet,
+    parse_tlvs,
 )
 from nethernet.wire import bytes_of, hex_decode, hex_encode, string_of
-from std.testing import TestSuite, assert_equal, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 # Packets recorded from pion/sctp v1.12.0. "A" is a default pion client (as
 # pion/webrtc creates it); "B" is a pion client without I-DATA support.
@@ -59,11 +69,10 @@ comptime A_COOKIE_ECHO = "13881388aa764be48f086ac50a000024c7e39cf3a08013b9570486
 comptime A_DCEP_OPEN = "13881388aa764be43969edb10003002f2816389d000000000000003203000100000000000013000052656c6961626c65446174614368616e6e656c00"
 comptime A_UNORDERED = "13881388aa764be4e9e4d92400070074281638a200020001000000350910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7be"
 comptime B_SACK = "13881388ac060e97f191e4dc03000010281638a4000fffec00000000"
-comptime B_SACK_GAP = "138813886f0b57a2734f10cf0300001429705da5000ff8d00001000000020002"
+comptime B_SACK_GAP = (
+    "138813886f0b57a2734f10cf0300001429705da5000ff8d00001000000020002"
+)
 comptime A_FORWARD_TSN = "13881388cf80eb67e1f9c901c0000008c1763264"
-comptime A_RESET_REQUEST = "13881388aa764be4d04d463a82000016000d00122816389d00000000281638a400020000"
-comptime B_RESET_RESPONSE = "13881388ac060e97472ab677820000100010000c2816389d00000001"
-comptime A_ABORT = "13881388aa764be4a9a60bbd0600000b000c000762796500"
 
 
 def _chunk(packet: List[UInt8], index: Int) raises -> List[UInt8]:
@@ -174,7 +183,9 @@ def test_init_unknown_parameters() raises:
         "020000220000000100100000ffffffff00000002c00000040008000ac0330006aabb0000",
     )
     # Address and adaptation-layer parameters are ignored silently.
-    var ignored = hex_decode(fixed + "000500087f000001" + "c00600080000000a" + "c0000004")
+    var ignored = hex_decode(
+        fixed + "000500087f000001" + "c00600080000000a" + "c0000004"
+    )
     var e = decode_init(Span(ignored))
     assert_true(e.forward_tsn_supported)
     assert_equal(len(e.unrecognized), 0)
@@ -247,7 +258,9 @@ def test_data_flags_and_truncation() raises:
     )
     var out = List[UInt8]()
     d.encode(out)
-    assert_equal(hex_encode(Span(out)), "00060011000000070003000900000035" + "78000000")
+    assert_equal(
+        hex_encode(Span(out)), "00060011000000070003000900000035" + "78000000"
+    )
     var back = decode_data(Span(out)[4:17], out[1])
     assert_true(back.beginning())
     assert_false(back.ending())
@@ -336,91 +349,6 @@ def test_forward_tsn_matches_pion() raises:
         _ = decode_forward_tsn(Span(gout)[4:6])
 
 
-def test_reconfig_matches_pion() raises:
-    var p = hex_decode(A_RESET_REQUEST)
-    var params = decode_reconfig(Span(_value(p, 0)))
-    assert_equal(len(params), 1)
-    assert_true(params[0].kind == PARAM_OUTGOING_RESET)
-    assert_equal(params[0].request_seq, 0x2816389D)
-    assert_equal(params[0].response_seq, 0)
-    assert_equal(params[0].last_tsn, 0x281638A4)
-    assert_equal(len(params[0].streams), 1)
-    assert_equal(params[0].streams[0], 2)
-    var out = List[UInt8]()
-    encode_reconfig(out, Span(params))
-    assert_equal(hex_encode(Span(out)), hex_encode(Span(_chunk(p, 0))))
-
-    var r = hex_decode(B_RESET_RESPONSE)
-    var rparams = decode_reconfig(Span(_value(r, 0)))
-    assert_equal(len(rparams), 1)
-    assert_true(rparams[0].kind == PARAM_RECONFIG_RESPONSE)
-    assert_equal(rparams[0].request_seq, 0x2816389D)
-    assert_true(rparams[0].result == RECONFIG_RESULT_PERFORMED)
-    var rout = List[UInt8]()
-    var built: List[ReconfigParam] = []
-    built.append(reconfig_response(0x2816389D, RECONFIG_RESULT_PERFORMED))
-    encode_reconfig(rout, Span(built))
-    assert_equal(hex_encode(Span(rout)), hex_encode(Span(_chunk(r, 0))))
-
-
-def test_reconfig_two_parameters_and_errors() raises:
-    var streams: List[UInt16] = [1, 2, 3]
-    var params: List[ReconfigParam] = []
-    params.append(outgoing_reset_request(10, 20, 30, Span(streams)))
-    params.append(reconfig_response(40, 6))
-    var out = List[UInt8]()
-    encode_reconfig(out, Span(params))
-    # The first parameter is 22 bytes and is padded because another follows.
-    assert_equal(
-        hex_encode(Span(out)),
-        "82000028000d00160000000a000000140000001e00010002000300000010000c0000002800000006",
-    )
-    var back = decode_reconfig(Span(out)[4 : len(out)])
-    assert_equal(len(back), 2)
-    assert_equal(len(back[0].streams), 3)
-    assert_equal(back[1].result, 6)
-    # Incoming reset request.
-    var incoming = hex_decode("000e000c0000000500070009")
-    var inc = decode_reconfig(Span(incoming))
-    assert_true(inc[0].kind == PARAM_INCOMING_RESET)
-    assert_equal(inc[0].request_seq, 5)
-    assert_equal(inc[0].streams[1], 9)
-    # Truncated request, odd stream list, unknown type.
-    var short = hex_decode("000d000800000005")
-    with assert_raises():
-        _ = decode_reconfig(Span(short))
-    var odd = hex_decode("000e0009000000050007")
-    with assert_raises():
-        _ = decode_reconfig(Span(odd))
-    var unknown = hex_decode("00630004")
-    var unk = decode_reconfig(Span(unknown))
-    assert_equal(len(unk), 1)
-    assert_equal(unk[0].kind, 0x63)
-
-
-def test_abort_matches_pion() raises:
-    var p = hex_decode(A_ABORT)
-    var causes = decode_causes(Span(_value(p, 0)))
-    assert_equal(len(causes), 1)
-    assert_true(causes[0].code == CAUSE_USER_INITIATED_ABORT)
-    assert_equal(string_of(Span(causes[0].info)), "bye")
-    var out = List[UInt8]()
-    encode_abort(out, False, Span(causes))
-    assert_equal(hex_encode(Span(out)), hex_encode(Span(_chunk(p, 0))))
-    var reflected = List[UInt8]()
-    var none = List[ErrorCause]()
-    encode_abort(reflected, True, Span(none))
-    assert_equal(hex_encode(Span(reflected)), "06010004")
-    # pion's Stop(): an ABORT with one empty user-initiated cause.
-    var stop = hex_decode("000c0004")
-    var sc = decode_causes(Span(stop))
-    assert_equal(len(sc), 1)
-    assert_equal(len(sc[0].info), 0)
-    var bad = hex_decode("000c0009aabb")
-    with assert_raises():
-        _ = decode_causes(Span(bad))
-
-
 def test_simple_chunks() raises:
     var out = List[UInt8]()
     encode_shutdown(out, 0x01020304)
@@ -438,28 +366,6 @@ def test_simple_chunks() raises:
     var info = hex_decode("00010007aabbcc")
     encode_heartbeat(hb, CHUNK_HEARTBEAT_ACK, Span(info))
     assert_equal(hex_encode(Span(hb)), "0500000b00010007aabbcc00")
-    var err = List[UInt8]()
-    var causes: List[ErrorCause] = []
-    var unrec = hex_decode("40000004")
-    causes.append(ErrorCause(6, Span(unrec)))
-    encode_error(err, Span(causes))
-    assert_equal(hex_encode(Span(err)), "0900000c0006000840000004")
-
-
-def test_parse_tlvs_bounds() raises:
-    var two = hex_decode("00010005aa0000000002000400")
-    with assert_raises():
-        _ = parse_tlvs(Span(two), 0)
-    var ok = hex_decode("00010005aa00000000020004")
-    var items = parse_tlvs(Span(ok), 0)
-    assert_equal(len(items), 2)
-    assert_equal(items[0].length, 1)
-    assert_equal(items[1].offset, 12)
-    with assert_raises():
-        _ = parse_tlvs(Span(ok), 13)
-    var past = hex_decode("0001ffff")
-    with assert_raises():
-        _ = parse_tlvs(Span(past), 0)
 
 
 def main() raises:
