@@ -33,7 +33,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: interop <listen|dial|http-listen|http-dial> [flags]")
+		fatalf("usage: interop <listen|dial|http-listen|http-dial|lossy-proxy> [flags]")
 	}
 	switch os.Args[1] {
 	case "listen":
@@ -44,6 +44,8 @@ func main() {
 		httpListen(os.Args[2:])
 	case "http-dial":
 		httpDial(os.Args[2:])
+	case "lossy-proxy":
+		lossyProxy(os.Args[2:])
 	default:
 		fatalf("unknown command %q", os.Args[1])
 	}
