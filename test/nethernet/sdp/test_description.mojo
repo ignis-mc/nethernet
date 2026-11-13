@@ -85,7 +85,8 @@ def test_parse_lf_endings_and_session_fingerprint() raises:
         "a=max-message-size:1024\n"
     )
     var d = parse_description(text)
-    assert_equal(d.fingerprint_algorithm, "sha-256")
+    # Kept as written: the identity assertion signs this exact token.
+    assert_equal(d.fingerprint_algorithm, "SHA-256")
     assert_equal(d.fingerprint, "01:02")
     assert_equal(d.setup, "passive")
     assert_equal(d.max_message_size, 1024)

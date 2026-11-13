@@ -9,6 +9,7 @@ Options:
     --bind ADDR:PORT   discovery address (default 0.0.0.0:7551)
     --network-id N     network ID to announce (default random)
     --bind-ip IP       local address for connections (default: default route)
+    --allow-anonymous  accept offers without an identity assertion
     --conns N          exit after N connections have closed (default: never)
     --timeout SECONDS  exit with an error after this long (default: never)
 """
@@ -31,6 +32,13 @@ def option(name: StringSpan, default: StringSpan) -> String:
     return String(default)
 
 
+def flag(name: StringSpan) -> Bool:
+    for arg in argv():
+        if arg == name:
+            return True
+    return False
+
+
 def main() raises:
     var bind = SocketAddr.parse(option("--bind", "0.0.0.0:7551"))
     var network_id = UInt64(Int(option("--network-id", "0")))
@@ -45,6 +53,7 @@ def main() raises:
     data.max_player_count = 8
     discovery.set_server_data(data)
     var config = ListenConfig()
+    config.allow_anonymous = flag("--allow-anonymous")
     if bind_ip.byte_length() > 0:
         config.conn.bind_ip = SocketAddr.parse_ip(bind_ip)
     var listener = Listener[DiscoveryListener](discovery^, config)

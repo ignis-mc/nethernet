@@ -2,11 +2,14 @@
 
 from .conn import CONN_STATE_CLOSED, Conn, ConnConfig
 from .os.poll import PollSet
-from .os.random import random_u64
-from .os.time import monotonic_ms
-from .sdp.description import parse_description
+from .crypto.p384 import p384_private_key_from_bytes
+from .os.random import random_bytes, random_u64
+from .os.time import monotonic_ms, unix_time_s
+from .sdp.description import Description, parse_description
+from .signaling.identity import IDENTITY_DOMAIN_CLIENT, Identity, RemoteIdentity
 from .signaling.signal import (
     ERROR_FAILED_TO_SET_REMOTE_DESCRIPTION,
+    ERROR_IDENTITY_NOT_ALLOWED,
     ERROR_INACTIVITY_TIMEOUT,
     ERROR_NEGOTIATION_TIMEOUT_WAITING_FOR_RESPONSE,
     SIGNAL_ANSWER,
@@ -30,12 +33,27 @@ struct DialConfig(Copyable):
     """The connection identifier to use; 0 picks a random one."""
     var timeout_ms: Int
     """How long to wait for the connection to open."""
+    var anonymous: Bool
+    """Whether to send the offer without an identity assertion.
+
+    Listeners reject anonymous offers unless configured to allow them.
+    """
+    var identity_key: List[UInt8]
+    """The 48-byte P-384 identity key; empty generates a throwaway key."""
+    var identity_domain: String
+    """The identity-provider domain announced with the assertion."""
+    var allow_identityless_server: Bool
+    """Whether to accept an answer that carries no identity assertion."""
 
     def __init__(out self):
         """Creates the default configuration."""
         self.conn = ConnConfig()
         self.connection_id = 0
         self.timeout_ms = DEFAULT_DIAL_TIMEOUT_MS
+        self.anonymous = False
+        self.identity_key = List[UInt8]()
+        self.identity_domain = IDENTITY_DOMAIN_CLIENT
+        self.allow_identityless_server = False
 
 
 struct DialAttempt(Movable):
@@ -51,6 +69,7 @@ struct DialAttempt(Movable):
     var _deadline_ms: Int
     var _answered: Bool
     var _error: String
+    var _allow_identityless_server: Bool
 
     def __init__[S: Signaling](
         out self, mut signaling: S, network_id: StringSpan, config: DialConfig
@@ -69,15 +88,30 @@ struct DialAttempt(Movable):
             Error: If the socket cannot be created or the offer cannot be
                 signaled.
         """
-        self._connection_id = config.connection_id
-        if self._connection_id == 0:
-            self._connection_id = random_u64()
+        var connection_id = config.connection_id
+        if connection_id == 0:
+            connection_id = random_u64()
+        var conn = Conn(True, connection_id, config.conn)
+        conn.set_remote_network_id(network_id)
+        if not config.anonymous:
+            var key = config.identity_key.copy()
+            if len(key) == 0:
+                var seed = random_bytes(56)
+                var fresh = p384_private_key_from_bytes(Span(seed))
+                key = List[UInt8](Span(fresh))
+            var identity = Identity.self_signed(
+                Span(key), config.identity_domain, unix_time_s(), False
+            )
+            conn.set_local_identity(
+                identity.sign("sha-256", conn.local_fingerprint())
+            )
+        self._connection_id = connection_id
         self._network_id = String(network_id)
-        self._conn = Conn(True, self._connection_id, config.conn)
-        self._conn.set_remote_network_id(network_id)
+        self._conn = conn^
         self._deadline_ms = monotonic_ms() + config.timeout_ms
         self._answered = False
         self._error = String()
+        self._allow_identityless_server = config.allow_identityless_server
         var trickle = signaling.trickle()
         var offer = self._conn.local_description(not trickle)
         signaling.send_signal(
@@ -120,6 +154,21 @@ struct DialAttempt(Movable):
             or self._conn.is_closed()
             or self._error.byte_length() > 0
         )
+
+    def _check_identity(mut self, remote: Description) raises:
+        """Verifies the answer's identity assertion, like go-nethernet's
+        default: the token must be signed by the key it presents, and that
+        key must have signed the answer's DTLS fingerprint."""
+        if remote.identity.byte_length() == 0:
+            if self._allow_identityless_server:
+                return
+            raise Error("identity: the server sent no identity assertion")
+        var identity = RemoteIdentity.parse(remote.identity)
+        var key = identity.public_key(True, unix_time_s())
+        identity.verify(
+            remote.fingerprint_algorithm, remote.fingerprint, Span(key)
+        )
+        self._conn.set_peer_public_key(Span(key))
 
     def _send_error[S: Signaling](self, mut signaling: S, code: Int):
         try:
@@ -166,8 +215,22 @@ struct DialAttempt(Movable):
             if signal.kind == SIGNAL_ANSWER:
                 if self._answered:
                     continue
+                var remote: Description
                 try:
-                    var remote = parse_description(signal.data)
+                    remote = parse_description(signal.data)
+                except e:
+                    self._send_error(
+                        signaling, ERROR_FAILED_TO_SET_REMOTE_DESCRIPTION
+                    )
+                    self._error = String(t"invalid answer: {e}")
+                    return
+                try:
+                    self._check_identity(remote)
+                except e:
+                    self._send_error(signaling, ERROR_IDENTITY_NOT_ALLOWED)
+                    self._error = String(t"{e}")
+                    return
+                try:
                     self._conn.set_remote_description(remote)
                     self._answered = True
                 except e:

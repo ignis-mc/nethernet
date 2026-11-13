@@ -29,7 +29,10 @@ struct Description(Copyable):
     var ice_pwd: String
     """The ICE password."""
     var fingerprint_algorithm: String
-    """The certificate hash name, normally `sha-256`."""
+    """The certificate hash name as written, normally `sha-256`.
+
+    The identity assertion signs this exact text, so it is not normalised.
+    """
     var fingerprint: String
     """The certificate hash as colon-separated hex."""
     var setup: String
@@ -217,7 +220,7 @@ def parse_description(text: StringSpan) raises -> Description:
     var fp_fields = fp.split(" ")
     if len(fp_fields) != 2:
         raise Error("SDP: missing or malformed fingerprint")
-    d.fingerprint_algorithm = String(fp_fields[0]).lower()
+    d.fingerprint_algorithm = String(fp_fields[0])
     d.fingerprint = String(fp_fields[1])
     if not have_setup:
         raise Error("SDP: missing setup attribute")

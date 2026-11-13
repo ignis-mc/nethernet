@@ -11,6 +11,9 @@ Options:
     --sizes A,B,C       reliable message sizes (default 1,2,100,1000)
     --unreliable N      unreliable messages to exchange (default 0)
     --bind-ip IP        local address for the connection (default route)
+    --anonymous         send no identity assertion with the offer
+    --allow-identityless accept a server that sends no identity assertion
+    --expect-fail       succeed only if the server rejects the connection
     --bye               ask the server to close the connection
     --timeout SECONDS   give up after this long (default 30)
 """
@@ -72,8 +75,24 @@ def main() raises:
     config.timeout_ms = max(1000, deadline - monotonic_ms())
     if bind_ip.byte_length() > 0:
         config.conn.bind_ip = SocketAddr.parse_ip(bind_ip)
+    config.anonymous = flag("--anonymous")
+    config.allow_identityless_server = flag("--allow-identityless")
+    if flag("--expect-fail"):
+        var failed = False
+        try:
+            var unexpected = dial(discovery, network_id, config)
+            unexpected.abort()
+        except e:
+            failed = True
+            print("FAILED_AS_EXPECTED", e)
+        if not failed:
+            raise Error("dial succeeded but was expected to fail")
+        print("OK")
+        return
     var conn = dial(discovery, network_id, config)
     print("CONNECTED", conn.remote_addr().value())
+    if len(conn.peer_public_key()) > 0:
+        print("PEER_IDENTITY", len(conn.peer_public_key()), "byte P-384 key")
 
     for field in option("--sizes", "1,2,100,1000").split(","):
         if field.byte_length() == 0:

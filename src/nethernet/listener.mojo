@@ -1,11 +1,16 @@
 """Listening: the answering side of NetherNet connections."""
 
 from .conn import Conn, ConnConfig
+from .crypto.p384 import p384_private_key_from_bytes
 from .os.poll import PollSet
-from .os.time import monotonic_ms
-from .sdp.description import parse_description
+from .os.random import random_bytes
+from .os.time import monotonic_ms, unix_time_s
+from .sdp.description import Description, parse_description
+from .signaling.identity import IDENTITY_DOMAIN_SERVER, Identity, RemoteIdentity
 from .signaling.signal import (
+    ERROR_FAILED_TO_CREATE_IDENTITY_ASSERTION,
     ERROR_FAILED_TO_SET_REMOTE_DESCRIPTION,
+    ERROR_IDENTITY_NOT_ALLOWED,
     ERROR_NEGOTIATION_TIMEOUT_WAITING_FOR_ACCEPT,
     SIGNAL_ANSWER,
     SIGNAL_CANDIDATE,
@@ -30,11 +35,24 @@ struct ListenConfig(Copyable):
     """The settings of every accepted connection."""
     var negotiation_timeout_ms: Int
     """How long an incoming connection may take to open."""
+    var allow_anonymous: Bool
+    """Whether to accept offers that carry no identity assertion."""
+    var identity_key: List[UInt8]
+    """The listener's 48-byte P-384 identity key; empty generates one.
+
+    Clients may pin this key on first use, so a long-lived server should
+    persist it.
+    """
+    var identity_domain: String
+    """The identity-provider domain announced with each answer."""
 
     def __init__(out self):
         """Creates the default configuration."""
         self.conn = ConnConfig()
         self.negotiation_timeout_ms = DEFAULT_NEGOTIATION_TIMEOUT_MS
+        self.allow_anonymous = False
+        self.identity_key = List[UInt8]()
+        self.identity_domain = IDENTITY_DOMAIN_SERVER
 
 
 struct _Pending(Movable):
@@ -73,18 +91,37 @@ struct Listener[S: Signaling](Movable):
     var _config: ListenConfig
     var _pending: List[_Pending]
     var _ready: List[Conn]
+    var _identity_key: List[UInt8]
 
-    def __init__(out self, var signaling: Self.S, config: ListenConfig):
+    def __init__(out self, var signaling: Self.S, config: ListenConfig) raises:
         """Creates a listener on a signaling channel.
 
         Args:
             signaling: The channel offers arrive on; the listener takes it.
             config: The listener settings.
+
+        Raises:
+            Error: If an identity key has to be generated and the kernel
+                cannot supply randomness.
         """
+        var key = config.identity_key.copy()
+        if len(key) == 0:
+            var seed = random_bytes(56)
+            var fresh = p384_private_key_from_bytes(Span(seed))
+            key = List[UInt8](Span(fresh))
         self._signaling = signaling^
         self._config = config.copy()
         self._pending = List[_Pending]()
         self._ready = List[Conn]()
+        self._identity_key = key^
+
+    def identity_key(self) -> List[UInt8]:
+        """Gets the P-384 identity key answers are signed with.
+
+        Returns:
+            The 48-byte private scalar, for persisting across restarts.
+        """
+        return self._identity_key.copy()
 
     def signaling(mut self) -> ref[self._signaling] Self.S:
         """Borrows the signaling channel, for example to set server data.
@@ -142,11 +179,58 @@ struct Listener[S: Signaling](Movable):
             return
         if len(self._pending) >= MAX_PENDING_NEGOTIATIONS:
             return
+        var remote: Description
         try:
-            var remote = parse_description(signal.data)
+            remote = parse_description(signal.data)
+        except:
+            self._send(
+                SIGNAL_ERROR,
+                signal.connection_id,
+                String(ERROR_FAILED_TO_SET_REMOTE_DESCRIPTION),
+                signal.network_id,
+            )
+            return
+        # Like go-nethernet's default: the token's time claims are checked
+        # and its key must have signed the offer's DTLS fingerprint.
+        var peer_key = List[UInt8]()
+        try:
+            if remote.identity.byte_length() == 0:
+                if not self._config.allow_anonymous:
+                    raise Error("identity: anonymous offers are not allowed")
+            else:
+                var identity = RemoteIdentity.parse(remote.identity)
+                peer_key = identity.public_key(False, unix_time_s())
+                identity.verify(
+                    remote.fingerprint_algorithm,
+                    remote.fingerprint,
+                    Span(peer_key),
+                )
+        except:
+            self._send(
+                SIGNAL_ERROR,
+                signal.connection_id,
+                String(ERROR_IDENTITY_NOT_ALLOWED),
+                signal.network_id,
+            )
+            return
+        var code = ERROR_FAILED_TO_SET_REMOTE_DESCRIPTION
+        try:
             var conn = Conn(False, signal.connection_id, self._config.conn)
             conn.set_remote_network_id(signal.network_id)
             conn.set_remote_description(remote)
+            if len(peer_key) > 0:
+                conn.set_peer_public_key(Span(peer_key))
+            code = ERROR_FAILED_TO_CREATE_IDENTITY_ASSERTION
+            var local_identity = Identity.self_signed(
+                Span(self._identity_key),
+                self._config.identity_domain,
+                unix_time_s(),
+                True,
+            )
+            conn.set_local_identity(
+                local_identity.sign("sha-256", conn.local_fingerprint())
+            )
+            code = ERROR_FAILED_TO_SET_REMOTE_DESCRIPTION
             var trickle = self._signaling.trickle()
             var answer = conn.local_description(not trickle)
             self._signaling.send_signal(
@@ -176,10 +260,7 @@ struct Listener[S: Signaling](Movable):
             )
         except:
             self._send(
-                SIGNAL_ERROR,
-                signal.connection_id,
-                String(ERROR_FAILED_TO_SET_REMOTE_DESCRIPTION),
-                signal.network_id,
+                SIGNAL_ERROR, signal.connection_id, String(code), signal.network_id
             )
 
     def poll(mut self, now_ms: Int) raises:

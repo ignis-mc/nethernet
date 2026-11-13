@@ -9,6 +9,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"errors"
 	"flag"
 	"fmt"
@@ -170,6 +173,8 @@ func dial(args []string) {
 	sizes := fs.String("sizes", "1,2,100,1000", "comma-separated reliable message sizes")
 	unreliable := fs.Int("unreliable", 0, "number of unreliable messages to exchange")
 	identityless := fs.Bool("identityless", false, "accept answers without an identity")
+	withIdentity := fs.Bool("identity", false, "attach a self-signed client identity to the offer")
+	expectFail := fs.Bool("expect-fail", false, "succeed only if the dial is rejected")
 	bye := fs.Bool("bye", false, "ask the listener to close instead of closing first")
 	timeout := fs.Duration("timeout", 60*time.Second, "overall time limit")
 	verbose := fs.Bool("v", false, "debug logging")
@@ -211,8 +216,27 @@ func dial(args []string) {
 		}
 	}
 
-	conn, err := nethernet.Dialer{Log: log, AllowIdentitylessServer: *identityless}.
-		DialContext(ctx, strconv.FormatUint(networkID, 10), d)
+	dialer := nethernet.Dialer{Log: log, AllowIdentitylessServer: *identityless}
+	if *withIdentity {
+		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		if err != nil {
+			fatalf("generate identity key: %v", err)
+		}
+		identity, err := nethernet.SelfSignedIdentity(key, "https://authorization.franchise.minecraft-services.net/")
+		if err != nil {
+			fatalf("create identity: %v", err)
+		}
+		dialer.Identity = identity
+	}
+	conn, err := dialer.DialContext(ctx, strconv.FormatUint(networkID, 10), d)
+	if *expectFail {
+		if err == nil {
+			fatalf("dial succeeded but was expected to fail")
+		}
+		fmt.Printf("FAILED_AS_EXPECTED %v\n", err)
+		fmt.Println("OK")
+		return
+	}
 	if err != nil {
 		fatalf("dial: %v", err)
 	}

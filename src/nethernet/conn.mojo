@@ -156,6 +156,7 @@ struct Conn(Movable):
     var _unreliable: _Channel
     var _inbox: List[List[UInt8]]
     var _inbox_unreliable: List[List[UInt8]]
+    var _peer_public_key: List[UInt8]
 
     def __init__(
         out self, offerer: Bool, connection_id: UInt64, config: ConnConfig
@@ -249,6 +250,7 @@ struct Conn(Movable):
         self._unreliable = _Channel()
         self._inbox = List[List[UInt8]]()
         self._inbox_unreliable = List[List[UInt8]]()
+        self._peer_public_key = List[UInt8]()
 
     # ===------------------------------------------------------------------=== #
     # Negotiation
@@ -273,6 +275,40 @@ struct Conn(Movable):
                 self.local_candidate().attribute_value(self._local.ice_ufrag, 0)
             )
         return d^
+
+    def local_fingerprint(self) -> String:
+        """Gets the SHA-256 fingerprint of the local DTLS certificate.
+
+        Returns:
+            Uppercase colon-separated hex, as written in `a=fingerprint`.
+        """
+        return self._local.fingerprint.copy()
+
+    def set_local_identity(mut self, value: StringSpan):
+        """Attaches an identity assertion to the local description.
+
+        Args:
+            value: The base64 text for `a=identity`, from `Identity.sign()`
+                over `local_fingerprint()`.
+        """
+        self._local.identity = String(value)
+
+    def peer_public_key(self) -> List[UInt8]:
+        """Gets the identity key the peer proved possession of.
+
+        Returns:
+            The uncompressed P-384 point, or an empty list if the peer was
+            anonymous or its identity was not checked.
+        """
+        return self._peer_public_key.copy()
+
+    def set_peer_public_key(mut self, key: Span[UInt8, _]):
+        """Records the peer's verified identity key.
+
+        Args:
+            key: The uncompressed P-384 point.
+        """
+        self._peer_public_key = List[UInt8](key)
 
     def local_candidate(self) -> IceCandidate:
         """Gets the host candidate for this connection's socket.
@@ -306,7 +342,7 @@ struct Conn(Movable):
         """
         if self._have_remote:
             raise Error("remote description already set")
-        if remote.fingerprint_algorithm != "sha-256":
+        if remote.fingerprint_algorithm.lower() != "sha-256":
             raise Error("unsupported fingerprint algorithm")
         var fingerprint = remote.fingerprint_bytes()
         if len(fingerprint) != 32:
