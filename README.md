@@ -30,7 +30,7 @@ directions: `interop/run.sh` runs 24 dial/listen combinations over LAN
 discovery signaling and HTTP signaling, with identity assertions, messages
 from 1 byte to 600 kB, the unreliable channel, and closes from either side.
 
-It has not yet been run against the vanilla game client or server.
+It also works with real game clients. The vanilla Minecraft client 1.26.60 (libwebrtc) joins a Mojo listener over HTTP signaling, accepts its identity assertion and reaches the world through `examples/relay.mojo`; the Cinnabar client (go-nethernet) does the same. See [docs/interop.md](docs/interop.md#real-game-clients).
 
 | Area | State |
 |---|---|
