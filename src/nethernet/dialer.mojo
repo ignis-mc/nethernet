@@ -42,6 +42,10 @@ struct DialConfig(Copyable):
     """The 48-byte P-384 identity key; empty generates a throwaway key."""
     var identity_domain: String
     """The identity-provider domain announced with the assertion."""
+    var identity_token: String
+    """A token issued for `identity_key` (for example the Minecraft
+    multiplayer token); empty issues a self-signed one. Needs `identity_key`.
+    """
     var allow_identityless_server: Bool
     """Whether to accept an answer that carries no identity assertion."""
 
@@ -53,6 +57,7 @@ struct DialConfig(Copyable):
         self.anonymous = False
         self.identity_key = List[UInt8]()
         self.identity_domain = IDENTITY_DOMAIN_CLIENT
+        self.identity_token = String()
         self.allow_identityless_server = False
 
 
@@ -97,13 +102,21 @@ struct DialAttempt(Movable):
         conn.set_remote_network_id(network_id)
         if not config.anonymous:
             var key = config.identity_key.copy()
+            if config.identity_token.byte_length() > 0 and len(key) == 0:
+                raise Error("dial: identity_token needs identity_key")
             if len(key) == 0:
                 var seed = random_bytes(56)
                 var fresh = p384_private_key_from_bytes(Span(seed))
                 key = List[UInt8](Span(fresh))
-            var identity = Identity.self_signed(
-                Span(key), config.identity_domain, unix_time_s(), False
-            )
+            var identity: Identity
+            if config.identity_token.byte_length() > 0:
+                identity = Identity(
+                    Span(key), config.identity_token, config.identity_domain
+                )
+            else:
+                identity = Identity.self_signed(
+                    Span(key), config.identity_domain, unix_time_s(), False
+                )
             conn.set_local_identity(
                 identity.sign("sha-256", conn.local_fingerprint())
             )

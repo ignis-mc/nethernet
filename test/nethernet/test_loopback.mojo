@@ -1,14 +1,22 @@
 from nethernet.conn import RELIABLE, UNRELIABLE, Conn
-from nethernet.crypto.p384 import p384_public_key
+from nethernet.crypto.p384 import p384_private_key_from_bytes, p384_public_key
 from nethernet.dialer import DialAttempt, DialConfig
 from nethernet.discovery.listener import DiscoveryListener
 from nethernet.discovery.server_data import ServerData
 from nethernet.listener import ListenConfig, Listener
 from nethernet.os.addr import SocketAddr
 from nethernet.os.poll import PollSet
-from nethernet.os.time import monotonic_ms
+from nethernet.os.random import random_bytes
+from nethernet.os.time import monotonic_ms, unix_time_s
+from nethernet.signaling.identity import Identity
 from nethernet.wire import bytes_of, hex_encode, string_of
-from std.testing import TestSuite, assert_equal, assert_false, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 comptime LOOPBACK = 0x7F000001
 
@@ -36,12 +44,13 @@ struct Pair(Movable):
 
 
 def _connect(
-    mut listener: Listener[DiscoveryListener], mut client: DiscoveryListener
+    mut listener: Listener[DiscoveryListener],
+    mut client: DiscoveryListener,
+    var config: DialConfig = DialConfig(),
 ) raises -> Pair:
     """Dials the listener from `client` and returns both ends."""
     var host_id = listener.signaling().id()
     client.add_peer(host_id, listener.signaling().local_addr(), monotonic_ms())
-    var config = DialConfig()
     config.conn.bind_ip = LOOPBACK
     config.timeout_ms = 10000
     var attempt = DialAttempt(client, String(host_id), config)
@@ -224,6 +233,37 @@ def test_identities_are_exchanged_and_checked() raises:
     assert_false(
         hex_encode(Span(seen_by_listener)) == hex_encode(Span(expected))
     )
+
+
+def test_dial_with_an_issued_identity_token() raises:
+    # A token issued elsewhere (here: minted separately, as the Minecraft
+    # multiplayer token would be) is presented instead of a self-signed one.
+    var key = p384_private_key_from_bytes(Span(random_bytes(56)))
+    var issued = Identity.self_signed(
+        Span(key), "https://issuer.example/", unix_time_s(), False
+    )
+    var config = DialConfig()
+    config.identity_key = List[UInt8](Span(key))
+    config.identity_token = issued.token
+    config.identity_domain = "https://issuer.example/"
+    var listener = _listener()
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    var pair = _connect(listener, client, config^)
+    assert_equal(
+        hex_encode(Span(pair.acceptor.peer_public_key())),
+        hex_encode(Span(p384_public_key(Span(key)))),
+    )
+
+
+def test_identity_token_needs_a_key() raises:
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    client.add_peer(7, SocketAddr(LOOPBACK, 1), monotonic_ms())
+    var config = DialConfig()
+    config.identity_token = "a.b.c"
+    with assert_raises(contains="needs identity_key"):
+        _ = DialAttempt(client, "7", config)
 
 
 def test_anonymous_offer_is_rejected() raises:
