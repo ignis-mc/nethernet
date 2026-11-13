@@ -15,8 +15,11 @@ comptime SCTP_PORT = 5000
 """The SCTP port used on both ends, carried in `a=sctp-port`."""
 
 comptime SETUP_ACTPASS: StaticString = "actpass"
+"""`a=setup:actpass`: the offerer accepts either DTLS role."""
 comptime SETUP_ACTIVE: StaticString = "active"
+"""`a=setup:active`: this end is the DTLS client."""
 comptime SETUP_PASSIVE: StaticString = "passive"
+"""`a=setup:passive`: this end is the DTLS server."""
 
 
 struct Description(Copyable):

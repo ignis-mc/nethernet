@@ -94,6 +94,13 @@ struct ConnConfig(Copyable):
     """The `max-message-size` to advertise to the peer."""
     var max_packet_size: Int
     """The largest reassembled message accepted from the peer."""
+    var max_buffered_bytes: Int
+    """How many received bytes may wait unread before the connection closes.
+
+    Messages queue up until `receive()` or `read()` takes them. A peer that
+    sends faster than the application reads would otherwise grow that queue
+    without bound.
+    """
     var common_name: String
     """The common name in the self-signed DTLS certificate."""
 
@@ -102,6 +109,7 @@ struct ConnConfig(Copyable):
         self.bind_ip = 0
         self.max_message_size = DEFAULT_MAX_MESSAGE_SIZE
         self.max_packet_size = 16 * 1024 * 1024
+        self.max_buffered_bytes = 64 * 1024 * 1024
         self.common_name = "WebRTC"
 
 
@@ -156,6 +164,7 @@ struct Conn(Movable):
     var _unreliable: _Channel
     var _inbox: List[List[UInt8]]
     var _inbox_unreliable: List[List[UInt8]]
+    var _inbox_bytes: Int
     var _peer_public_key: List[UInt8]
 
     def __init__(
@@ -250,6 +259,7 @@ struct Conn(Movable):
         self._unreliable = _Channel()
         self._inbox = List[List[UInt8]]()
         self._inbox_unreliable = List[List[UInt8]]()
+        self._inbox_bytes = 0
         self._peer_public_key = List[UInt8]()
 
     # ===------------------------------------------------------------------=== #
@@ -666,6 +676,8 @@ struct Conn(Movable):
             if count != 0:
                 self._fail("segmented message on the unreliable channel")
                 return
+            if not self._account(len(data) - 1):
+                return
             self._inbox_unreliable.append(List[UInt8](data[1 : len(data)]))
             return
         if Int(stream_id) != self._reliable.stream_id:
@@ -677,6 +689,8 @@ struct Conn(Movable):
         if len(self._reliable.buffer) + len(data) - 1 > self._config.max_packet_size:
             self._fail("message exceeds the maximum packet size")
             return
+        if not self._account(len(data) - 1):
+            return
         self._reliable.buffer.extend(data[1 : len(data)])
         if count == 0:
             var whole = List[UInt8]()
@@ -685,6 +699,14 @@ struct Conn(Movable):
             self._reliable.remaining = -1
         else:
             self._reliable.remaining = count
+
+    def _account(mut self, n: Int) -> Bool:
+        """Charges `n` received bytes to the unread budget; False closes."""
+        self._inbox_bytes += n
+        if self._inbox_bytes > self._config.max_buffered_bytes:
+            self._fail("receive buffer overflow: the application is not reading")
+            return False
+        return True
 
     def _on_dcep(mut self, stream_id: UInt16, data: Span[UInt8, _]):
         if is_dcep_ack(data):
@@ -791,10 +813,14 @@ struct Conn(Movable):
         if reliability == UNRELIABLE:
             if len(self._inbox_unreliable) == 0:
                 return None
-            return self._inbox_unreliable.pop(0)
+            var datagram = self._inbox_unreliable.pop(0)
+            self._inbox_bytes -= len(datagram)
+            return datagram^
         if len(self._inbox) == 0:
             return None
-        return self._inbox.pop(0)
+        var message = self._inbox.pop(0)
+        self._inbox_bytes -= len(message)
+        return message^
 
     def read(mut self, timeout_ms: Int) raises -> List[UInt8]:
         """Waits for the next message on the reliable channel.
@@ -814,7 +840,9 @@ struct Conn(Movable):
         while True:
             self.poll(monotonic_ms())
             if len(self._inbox) > 0:
-                return self._inbox.pop(0)
+                var message = self._inbox.pop(0)
+                self._inbox_bytes -= len(message)
+                return message^
             if self._state == CONN_STATE_CLOSED:
                 raise Error(t"connection closed: {self._close_reason}")
             var now = monotonic_ms()

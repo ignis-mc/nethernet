@@ -10,6 +10,7 @@ from .reconfig import (
     PARAM_ADD_INCOMING_STREAMS,
     PARAM_INCOMING_RESET,
     PARAM_OUTGOING_RESET,
+    PARAM_RECONFIG_RESPONSE,
     RECONFIG_RESULT_BAD_SEQUENCE,
     RECONFIG_RESULT_DENIED,
     RECONFIG_RESULT_IN_PROGRESS,
@@ -107,7 +108,9 @@ struct StreamReset(Movable):
         encode_reconfig(chunk, Span(params))
         return chunk^
 
-    def start_request(mut self, mut sender: Sender, peer_supports: Bool) -> Bool:
+    def start_request(
+        mut self, mut sender: Sender, peer_supports: Bool
+    ) -> Bool:
         """Opens a request for the streams whose reset is due, if allowed.
 
         Only one request may be open at a time, so streams that become
@@ -208,7 +211,11 @@ struct StreamReset(Movable):
         var none = List[UInt8]()
         var kind = param.kind
         var seq = param.request_seq
-        if kind < PARAM_OUTGOING_RESET or kind > PARAM_ADD_INCOMING_STREAMS:
+        if (
+            kind < PARAM_OUTGOING_RESET
+            or kind > PARAM_ADD_INCOMING_STREAMS
+            or kind == PARAM_RECONFIG_RESPONSE
+        ):
             return none^
         # The sequence number says whether the request is new.
         if seq == self._peer_seq:

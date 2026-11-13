@@ -473,7 +473,24 @@ def hex_decode(text: StringSpan) raises -> List[UInt8]:
     Raises:
         Error: If the length is odd or a character is not a hex digit.
     """
-    var src = text.as_bytes()
+    return hex_decode_bytes(text.as_bytes())
+
+
+def hex_decode_bytes(src: Span[UInt8, _]) raises -> List[UInt8]:
+    """Decodes hexadecimal digits given as raw ASCII bytes.
+
+    Unlike `hex_decode()`, the input need not be valid UTF-8, so bytes from
+    the network can be passed directly.
+
+    Args:
+        src: The hex digits, upper or lower case, with no separators.
+
+    Returns:
+        The decoded bytes.
+
+    Raises:
+        Error: If the length is odd or a byte is not a hex digit.
+    """
     if len(src) % 2 != 0:
         raise Error("hex string has odd length")
     var out = List[UInt8](capacity=len(src) // 2)
@@ -495,12 +512,17 @@ def bytes_of(text: StringSpan) -> List[UInt8]:
 
 
 def string_of(data: Span[UInt8, _]) -> String:
-    """Builds a string from bytes without validating UTF-8.
+    """Builds a string from bytes, replacing invalid UTF-8.
+
+    Bytes from the network must never reach `String(unsafe_from_utf8=…)`:
+    that constructor aborts on invalid UTF-8 when assertions are enabled and
+    creates a malformed string when they are not. Use this where a best
+    effort is fine, or `String(from_utf8=…)` to reject invalid input.
 
     Args:
         data: The bytes to copy.
 
     Returns:
-        A string holding a copy of `data`.
+        A string holding `data`, with U+FFFD in place of invalid sequences.
     """
-    return String(unsafe_from_utf8=data)
+    return String(from_utf8_lossy=data)

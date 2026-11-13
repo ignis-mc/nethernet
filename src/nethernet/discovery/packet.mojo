@@ -19,7 +19,7 @@ from ..crypto.hmac import hmac
 from ..crypto.sha256 import Sha256, sha256
 from ..wire import (
     Reader,
-    hex_decode,
+    hex_decode_bytes,
     hex_encode,
     put_bytes,
     put_u16_le,
@@ -218,11 +218,11 @@ def unmarshal_packet(datagram: Span[UInt8, _]) raises -> DiscoveryPacket:
     if kind == PACKET_RESPONSE:
         _ = r.u32_le()
         var hex = r.rest()
-        pk.application_data = hex_decode(StringSpan(unsafe_from_utf8=hex))
+        pk.application_data = hex_decode_bytes(hex)
         return pk^
     if kind == PACKET_MESSAGE:
         pk.recipient_id = r.u64_le()
         _ = r.u32_le()
-        pk.data = String(unsafe_from_utf8=r.rest())
+        pk.data = String(from_utf8=r.rest())
         return pk^
     raise Error(t"discovery: unknown packet ID {kind}")

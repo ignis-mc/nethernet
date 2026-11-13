@@ -12,25 +12,42 @@ from ..os.addr import SocketAddr
 from ..wire import Reader, put_bytes, put_u16, put_u32, put_u64, set_u16
 
 comptime STUN_MAGIC_COOKIE = 0x2112A442
+"""The fixed value in bytes 4 to 7 of every STUN message."""
 comptime STUN_HEADER_LEN = 20
+"""The size of the STUN header in bytes."""
 
 comptime STUN_BINDING_REQUEST = 0x0001
+"""Message type of a Binding request."""
 comptime STUN_BINDING_INDICATION = 0x0011
+"""Message type of a Binding indication."""
 comptime STUN_BINDING_SUCCESS = 0x0101
+"""Message type of a Binding success response."""
 comptime STUN_BINDING_ERROR = 0x0111
+"""Message type of a Binding error response."""
 
 comptime STUN_ATTR_MAPPED_ADDRESS = 0x0001
+"""Attribute type `MAPPED-ADDRESS`."""
 comptime STUN_ATTR_USERNAME = 0x0006
+"""Attribute type `USERNAME`."""
 comptime STUN_ATTR_MESSAGE_INTEGRITY = 0x0008
+"""Attribute type `MESSAGE-INTEGRITY`."""
 comptime STUN_ATTR_ERROR_CODE = 0x0009
+"""Attribute type `ERROR-CODE`."""
 comptime STUN_ATTR_XOR_MAPPED_ADDRESS = 0x0020
+"""Attribute type `XOR-MAPPED-ADDRESS`."""
 comptime STUN_ATTR_PRIORITY = 0x0024
+"""Attribute type `PRIORITY` (ICE)."""
 comptime STUN_ATTR_USE_CANDIDATE = 0x0025
+"""Attribute type `USE-CANDIDATE` (ICE)."""
 comptime STUN_ATTR_FINGERPRINT = 0x8028
+"""Attribute type `FINGERPRINT`."""
 comptime STUN_ATTR_ICE_CONTROLLED = 0x8029
+"""Attribute type `ICE-CONTROLLED`."""
 comptime STUN_ATTR_ICE_CONTROLLING = 0x802A
+"""Attribute type `ICE-CONTROLLING`."""
 
 comptime STUN_ERROR_ROLE_CONFLICT = 487
+"""Error code 487, Role Conflict (ICE)."""
 
 comptime _FINGERPRINT_XOR = 0x5354554E
 
@@ -124,7 +141,7 @@ struct StunMessage(Copyable):
         var i = self.find(STUN_ATTR_USERNAME)
         if i < 0:
             return None
-        return String(unsafe_from_utf8=Span(self.attributes[i].value))
+        return String(from_utf8_lossy=Span(self.attributes[i].value))
 
     def priority(self) -> Optional[UInt32]:
         """Gets the ICE PRIORITY attribute.

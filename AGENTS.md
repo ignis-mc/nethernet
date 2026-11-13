@@ -13,8 +13,9 @@ points here.
 - Mojo is pinned to **1.2.x** (`pixi.toml`). Run everything through
   `pixi run <task>`, or put a Mojo 1.2 `mojo` on `PATH`.
 - Tasks: `pixi run test`, `pixi run format`, `pixi run format-check`,
-  `pixi run lint-docs`, `pixi run build`, `pixi run bench`,
-  `pixi run interop` (needs Go).
+  `pixi run lint-docs`, `pixi run build`, `pixi run examples`,
+  `pixi run bench`, `pixi run check` (everything CI runs), and
+  `pixi run -e interop interop` (the go-nethernet matrix; installs Go).
 - One test file: `mojo run -I src -D ASSERT=all test/nethernet/crypto/test_sha256.mojo`.
   The test binary accepts `--only <names…>`, `--skip <names…>`, `--skip-all`.
 - After every edit, compile and run the affected test file. Do not report a
@@ -85,6 +86,11 @@ def hmac[H: Hash](key: Span[UInt8, _], ...) -> Array[UInt8, H.DIGEST_SIZE]: ...
 - `Dict.__getitem__` raises; call it from a `raises` function.
 - Fields of a non-copyable struct cannot be moved out individually; add a
   consuming method (`def into_x(deinit self) -> X: return self.x^`).
+- Bytes from the network never go into `String(unsafe_from_utf8=…)`: it
+  aborts on invalid UTF-8 when assertions are on and builds a malformed
+  string when they are off. Use `String(from_utf8=…)` (raises) or
+  `String(from_utf8_lossy=…)`. Slicing a string with `s[byte=a:b]` is only
+  safe at ASCII delimiters.
 - An `Array[UInt8, size_of[UInt32]()]` does not unify with
   `Array[UInt8, 4]`; build fixed arrays by hand instead of `as_bytes`.
 
@@ -93,6 +99,7 @@ def hmac[H: Hash](key: Span[UInt8, _], ...) -> Array[UInt8, H.DIGEST_SIZE]: ...
 ```text
 src/nethernet/
   wire.mojo        byte reader and put_* encoders (no dependencies)
+  json.mojo        minimal JSON reader and string quoting
   os/              clock, random, UDP/TCP sockets, poll; os/_sys = raw syscalls
   crypto/          hashes, HMAC, AES-GCM, P-256/P-384, ECDSA, X.509, CRCs, base64
   stun/  ice/      STUN codec; ICE agent (host candidates, checks, nomination)
@@ -100,7 +107,7 @@ src/nethernet/
   sctp/            SCTP association over DTLS (RFC 9260 subset + PR-SCTP + RECONFIG)
   datachannel/     DCEP and the two NetherNet channels
   sdp/             the SDP subset NetherNet uses, candidates
-  signaling/       signal codec, error codes, identity, HTTP endpoint
+  signaling/       signal codec, error codes, identity assertion, HTTP endpoint
   discovery/       LAN discovery on UDP 7551
   conn.mojo, dialer.mojo, listener.mojo   the public transport API
 ```

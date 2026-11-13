@@ -14,23 +14,18 @@ AUTH, ASCONF and sending HEARTBEAT.
 
 from std.collections import Deque
 
-from ..wire import put_u32, string_of
+from ..wire import put_u32
 from .cause import (
     CAUSE_INVALID_MANDATORY_PARAMETER,
-    CAUSE_INVALID_STREAM,
     CAUSE_NO_USER_DATA,
     CAUSE_OUT_OF_RESOURCE,
     CAUSE_PROTOCOL_VIOLATION,
     CAUSE_STALE_COOKIE,
-    CAUSE_UNRECOGNIZED_CHUNK,
     CAUSE_USER_INITIATED_ABORT,
     ErrorCause,
     decode_causes,
-    encode_abort,
-    encode_error,
 )
 from .chunk import (
-    InitChunk,
     SackChunk,
     decode_data,
     decode_forward_tsn,
@@ -43,20 +38,6 @@ from .chunk import (
     encode_shutdown,
     encode_shutdown_ack,
     encode_shutdown_complete,
-)
-from .reconfig import (
-    PARAM_INCOMING_RESET,
-    PARAM_OUTGOING_RESET,
-    PARAM_RECONFIG_RESPONSE,
-    RECONFIG_RESULT_BAD_SEQUENCE,
-    RECONFIG_RESULT_DENIED,
-    RECONFIG_RESULT_IN_PROGRESS,
-    RECONFIG_RESULT_PERFORMED,
-    ReconfigParam,
-    decode_reconfig,
-    encode_reconfig,
-    outgoing_reset_request,
-    reconfig_response,
 )
 from .config import (
     SCTP_EVENT_CLOSED,
@@ -75,7 +56,20 @@ from .config import (
     SctpEvent,
     SctpStats,
 )
-from .cookie import CookieData, decode_cookie, encode_cookie
+from .control import (
+    abort_packet,
+    abort_reason,
+    init_ack_packet,
+    init_backoff,
+    init_is_valid,
+    init_packet,
+    invalid_stream_report,
+    stale_cookie_packet,
+    stray_reply,
+    supports_forward_tsn,
+    unrecognized_chunk_report,
+)
+from .cookie import decode_cookie
 from .packet import (
     CHUNK_ABORT,
     CHUNK_COOKIE_ACK,
@@ -98,34 +92,24 @@ from .packet import (
     finish_packet,
     parse_packet,
 )
-from .reassembly import (
-    CHUNK_BUFFER_OVERHEAD,
-    REASSEMBLY_DISCARDED,
-    REASSEMBLY_TOO_LARGE,
-    TSN_DUPLICATE,
-    TSN_OUT_OF_WINDOW,
-    Reassembly,
-    SctpMessage,
-    TsnTracker,
+from .reassembly import SctpMessage
+from .receiver import (
+    RECEIVE_DUPLICATE,
+    RECEIVE_INVALID_STREAM,
+    RECEIVE_REFUSED,
+    RECEIVE_TOO_LARGE,
+    Receiver,
 )
+from .reconfig import PARAM_RECONFIG_RESPONSE, decode_reconfig
 from .sender import Sender
-from .serial import tsn_gt, tsn_le
+from .stream_reset import (
+    RESET_RESPONSE_IGNORED,
+    RESET_RESPONSE_IN_PROGRESS,
+    StreamReset,
+)
 from .timer import Timer
 
 comptime _MAX_CONTROL_QUEUE = 64
-comptime _MAX_DUPLICATE_REPORTS = 16
-comptime _MAX_GAP_BLOCKS = 64
-comptime _MAX_REASON_BYTES = 256
-
-
-def _printable(text: Span[UInt8, _]) -> String:
-    # Peer-supplied text: keep printable ASCII, bound the length.
-    var out = List[UInt8]()
-    for b in text:
-        if len(out) >= _MAX_REASON_BYTES:
-            break
-        out.append(b if b >= 0x20 and b < 0x7F else UInt8(0x3F))
-    return string_of(Span(out))
 
 
 struct Association(Movable):
@@ -146,38 +130,20 @@ struct Association(Movable):
     var _peer_tag: UInt32
     var _peer_reconfig: Bool
     var _out_streams: Int
-    var _in_streams: Int
 
     var _t1: Timer
     var _init_attempts: Int
     var _cookie_echo: List[UInt8]
     var _send_cookie_echo: Bool
 
-    var _tracker: TsnTracker
-    var _reasm: Reassembly
+    var _receiver: Receiver
     var _sack_needed: Bool
     var _saw_data: Bool
-    var _dup_tsns: List[UInt32]
-    var _last_rwnd: Int
 
     var _sender: Sender
     var _error_count: Int
 
-    var _reconf_next_seq: UInt32
-    var _reconf_active: Bool
-    var _reconf_seq: UInt32
-    var _reconf_last_tsn: UInt32
-    var _reconf_streams: List[UInt16]
-    var _reconf_waiting: List[UInt16]
-    var _t_reconf: Timer
-    var _peer_reconf_seq: UInt32
-    var _peer_reconf_result: UInt32
-    var _deferred_active: Bool
-    var _deferred_seq: UInt32
-    var _deferred_last_tsn: UInt32
-    var _deferred_streams: List[UInt16]
-    var _reconf_in_progress: Bool
-
+    var _reset: StreamReset
     var _t2: Timer
 
     var _ctrl_packets: Deque[List[UInt8]]
@@ -202,17 +168,19 @@ struct Association(Movable):
         self._peer_tag = 0
         self._peer_reconfig = False
         self._out_streams = Int(config.num_outbound_streams)
-        self._in_streams = Int(config.num_inbound_streams)
         self._t1 = Timer()
         self._init_attempts = 0
         self._cookie_echo = List[UInt8]()
         self._send_cookie_echo = False
-        self._tracker = TsnTracker(0, config.max_tsn_gap)
-        self._reasm = Reassembly(config.max_message_size)
+        self._receiver = Receiver(
+            config.a_rwnd,
+            config.max_message_size,
+            config.mtu,
+            config.max_tsn_gap,
+            Int(config.num_inbound_streams),
+        )
         self._sack_needed = False
         self._saw_data = False
-        self._dup_tsns = List[UInt32]()
-        self._last_rwnd = Int(config.a_rwnd)
         self._sender = Sender(
             config.initial_tsn,
             config.mtu,
@@ -221,20 +189,7 @@ struct Association(Movable):
             config.rto_max_ms,
         )
         self._error_count = 0
-        self._reconf_next_seq = config.initial_tsn
-        self._reconf_active = False
-        self._reconf_seq = 0
-        self._reconf_last_tsn = 0
-        self._reconf_streams = List[UInt16]()
-        self._reconf_waiting = List[UInt16]()
-        self._t_reconf = Timer()
-        self._peer_reconf_seq = 0
-        self._peer_reconf_result = 0
-        self._deferred_active = False
-        self._deferred_seq = 0
-        self._deferred_last_tsn = 0
-        self._deferred_streams = List[UInt16]()
-        self._reconf_in_progress = False
+        self._reset = StreamReset(config.initial_tsn)
         self._t2 = Timer()
         self._ctrl_packets = Deque[List[UInt8]]()
         self._ctrl_chunks = Deque[List[UInt8]]()
@@ -296,7 +251,7 @@ struct Association(Movable):
         Returns:
             Bytes held for reassembly, ordering or in unread events.
         """
-        return self._reasm.cost() + self._event_bytes
+        return self._receiver.buffered() + self._event_bytes
 
     def connect(mut self, now_ms: Int):
         """Starts an active open by queueing an INIT.
@@ -421,17 +376,9 @@ struct Association(Movable):
         var best: Optional[Int] = None
         if self._ended:
             return best
-        if self._t1.armed:
-            best = self._t1.deadline
-        if self._sender.t3.armed:
-            if not best or self._sender.t3.deadline < best.or_else(0):
-                best = self._sender.t3.deadline
-        if self._t2.armed:
-            if not best or self._t2.deadline < best.or_else(0):
-                best = self._t2.deadline
-        if self._t_reconf.armed:
-            if not best or self._t_reconf.deadline < best.or_else(0):
-                best = self._t_reconf.deadline
+        for t in [self._t1, self._sender.t3, self._t2, self._reset.timer]:
+            if t.armed and (not best or t.deadline < best.or_else(0)):
+                best = t.deadline
         return best
 
     def handle_timeout(mut self, now_ms: Int):
@@ -452,22 +399,20 @@ struct Association(Movable):
                 self._sender.rto.backoff()
                 self._send_shutdown_chunk()
                 self._t2.start(now_ms + self._sender.rto.rto())
-        if not self._ended and self._t_reconf.expired(now_ms):
-            if self._reconf_in_progress:
-                # RFC 6525 5.2.7: the peer said "in progress", so repeating
-                # the request is not a sign of trouble.
-                self._reconf_in_progress = False
-                self._queue_reset_request()
-                self._t_reconf.start(now_ms + self._sender.rto.rto())
-            elif self._sender.t3.armed:
-                # While DATA is outstanding, T3-rtx is what judges whether
-                # the peer still answers; one silent round counts once.
-                self._queue_reset_request()
-                self._t_reconf.start(now_ms + self._sender.rto.rto())
-            elif self._count_error():
-                self._sender.rto.backoff()
-                self._queue_reset_request()
-                self._t_reconf.start(now_ms + self._sender.rto.rto())
+        if not self._ended and self._reset.timer.expired(now_ms):
+            # Repeating the request counts as a silent round only if the
+            # peer did not answer "in progress" (RFC 6525 5.2.7) and no
+            # DATA is outstanding: otherwise T3-rtx already judges whether
+            # the peer still answers, and one round must count once.
+            var counts = not self._reset.in_progress and (
+                not self._sender.t3.armed
+            )
+            self._reset.in_progress = False
+            if not counts or self._count_error():
+                if counts:
+                    self._sender.rto.backoff()
+                self._push_chunk(self._reset.request_chunk())
+                self._reset.timer.start(now_ms + self._sender.rto.rto())
 
     def poll_event(mut self) -> Optional[SctpEvent]:
         """Takes the next queued event.
@@ -527,7 +472,7 @@ struct Association(Movable):
                     and stray.source_port == self._cfg.remote_port
                     and len(stray.chunks) > 0
                 ):
-                    self._out_of_the_blue(packet, stray)
+                    self._push_packet(stray_reply(self._cfg, stray))
             except:
                 pass
             return
@@ -561,11 +506,11 @@ struct Association(Movable):
         self._events.append(ev^)
 
     def _push_packet(mut self, var pkt: List[UInt8]):
-        if len(self._ctrl_packets) < _MAX_CONTROL_QUEUE:
+        if len(pkt) > 0 and len(self._ctrl_packets) < _MAX_CONTROL_QUEUE:
             self._ctrl_packets.append(pkt^)
 
     def _push_chunk(mut self, var chunk: List[UInt8]):
-        if len(self._ctrl_chunks) < _MAX_CONTROL_QUEUE:
+        if len(chunk) > 0 and len(self._ctrl_chunks) < _MAX_CONTROL_QUEUE:
             self._ctrl_chunks.append(chunk^)
 
     def _new_packet(self, tag: UInt32) -> List[UInt8]:
@@ -580,9 +525,9 @@ struct Association(Movable):
         self._state = SCTP_STATE_CLOSED
         self._t1.stop()
         self._t2.stop()
-        self._t_reconf.stop()
+        self._reset.timer.stop()
         self._sender.clear()
-        self._reasm.clear()
+        self._receiver.clear()
         self._ctrl_chunks.clear()
         self._sack_needed = False
         self._send_cookie_echo = False
@@ -593,12 +538,11 @@ struct Association(Movable):
     def _queue_abort(mut self, code: UInt16, info: Span[UInt8, _]):
         if not self._peer_known:
             return
-        var pkt = self._new_packet(self._peer_tag)
         var causes: List[ErrorCause] = []
         causes.append(ErrorCause(code, info))
-        encode_abort(pkt, False, Span(causes))
-        finish_packet(pkt)
-        self._push_packet(pkt^)
+        self._push_packet(
+            abort_packet(self._cfg, self._peer_tag, False, Span(causes))
+        )
 
     def _abort_with(mut self, code: UInt16, text: StringSpan):
         var info = List[UInt8]()
@@ -632,21 +576,10 @@ struct Association(Movable):
             or self._state == SCTP_STATE_SHUTDOWN_RECEIVED
         )
 
-    def _advertised_rwnd(self) -> Int:
-        var free = (
-            Int(self._cfg.a_rwnd) - self._reasm.cost() - self._event_bytes
-        )
-        if free < 0:
-            return 0
-        return free
-
     def _maybe_window_update(mut self):
         # After the reader frees a large part of a nearly closed window,
         # tell the peer instead of waiting for its zero window probe.
-        var quarter = Int(self._cfg.a_rwnd) // 4
-        if self._last_rwnd < quarter and (
-            self._advertised_rwnd() - self._last_rwnd >= quarter
-        ):
+        if self._receiver.window_update_due(self._event_bytes):
             if self._can_receive_data() or (
                 self._state == SCTP_STATE_SHUTDOWN_RECEIVED
             ):
@@ -654,23 +587,8 @@ struct Association(Movable):
 
     # ----------------------------------------------------------- handshake
 
-    def _local_init(self) -> InitChunk:
-        var init = InitChunk(
-            self._cfg.local_tag,
-            self._cfg.a_rwnd,
-            self._cfg.num_outbound_streams,
-            self._cfg.num_inbound_streams,
-            self._cfg.initial_tsn,
-        )
-        init.forward_tsn_supported = True
-        init.extensions = [UInt8(CHUNK_RECONFIG), UInt8(CHUNK_FORWARD_TSN)]
-        return init^
-
     def _queue_init(mut self):
-        var pkt = self._new_packet(0)
-        self._local_init().encode(pkt, CHUNK_INIT)
-        finish_packet(pkt)
-        self._push_packet(pkt^)
+        self._push_packet(init_packet(self._cfg))
 
     def _on_t1(mut self, now_ms: Int):
         self._init_attempts += 1
@@ -686,13 +604,7 @@ struct Association(Movable):
         else:
             self._t1.stop()
             return
-        var delay = self._cfg.rto_initial_ms
-        for _ in range(self._init_attempts):
-            delay *= 2
-            if delay >= self._cfg.rto_max_ms:
-                delay = self._cfg.rto_max_ms
-                break
-        self._t1.start(now_ms + delay)
+        self._t1.start(now_ms + init_backoff(self._cfg, self._init_attempts))
 
     def _set_peer(
         mut self,
@@ -707,16 +619,15 @@ struct Association(Movable):
         self._peer_known = True
         self._peer_tag = tag
         self._peer_reconfig = reconfig
-        self._tracker = TsnTracker(initial_tsn - 1, self._cfg.max_tsn_gap)
-        self._peer_reconf_seq = initial_tsn - 1
-        self._peer_reconf_result = 0
+        self._reset.set_peer(initial_tsn)
         self._sender.set_peer(a_rwnd, forward_tsn)
         self._out_streams = Int(self._cfg.num_outbound_streams)
         if Int(inbound) < self._out_streams:
             self._out_streams = Int(inbound)
-        self._in_streams = Int(self._cfg.num_inbound_streams)
-        if Int(outbound) < self._in_streams:
-            self._in_streams = Int(outbound)
+        var in_streams = Int(self._cfg.num_inbound_streams)
+        if Int(outbound) < in_streams:
+            in_streams = Int(outbound)
+        self._receiver.set_peer(initial_tsn, in_streams)
 
     def _establish(mut self):
         self._state = SCTP_STATE_ESTABLISHED
@@ -726,63 +637,35 @@ struct Association(Movable):
         self._error_count = 0
         self._push_event(SctpEvent(SCTP_EVENT_CONNECTED))
 
-    def _valid_init(self, init: InitChunk) -> Bool:
-        return (
-            init.initiate_tag != 0
-            and init.num_outbound_streams != 0
-            and init.num_inbound_streams != 0
-            and init.a_rwnd >= 1500
-        )
-
     def _on_init(mut self, value: Span[UInt8, _], now_ms: Int) raises:
         var init = decode_init(value)
-        if not self._valid_init(init):
+        if not init_is_valid(init):
             self._stats.chunks_dropped += 1
             if init.initiate_tag != 0:
-                var pkt = self._new_packet(init.initiate_tag)
                 var causes: List[ErrorCause] = []
                 var none = List[UInt8]()
                 causes.append(
                     ErrorCause(CAUSE_INVALID_MANDATORY_PARAMETER, Span(none))
                 )
-                encode_abort(pkt, False, Span(causes))
-                finish_packet(pkt)
-                self._push_packet(pkt^)
+                self._push_packet(
+                    abort_packet(
+                        self._cfg, init.initiate_tag, False, Span(causes)
+                    )
+                )
             return
         if self._state == SCTP_STATE_SHUTDOWN_ACK_SENT:
             self._send_shutdown_chunk()
             return
         # RFC 9260 5.1 and 5.2: in every other state the answer is an INIT
-        # ACK built from the local tag and TSN, which never change, so a
-        # crossing INIT of ours stays consistent with it. No state is kept;
-        # the cookie carries what COOKIE ECHO needs.
-        var data = CookieData()
-        data.peer_tag = init.initiate_tag
-        data.peer_initial_tsn = init.initial_tsn
-        data.peer_a_rwnd = init.a_rwnd
-        data.peer_outbound_streams = init.num_outbound_streams
-        data.peer_inbound_streams = init.num_inbound_streams
-        data.peer_forward_tsn = init.forward_tsn_supported or (
-            init.supports_extension(CHUNK_FORWARD_TSN)
-        )
-        data.peer_reconfig = init.supports_extension(CHUNK_RECONFIG)
-        data.local_tag = self._cfg.local_tag
-        data.local_initial_tsn = self._cfg.initial_tsn
-        data.created_ms = now_ms
-        var ack = self._local_init()
-        ack.cookie = encode_cookie(data, Span(self._cfg.cookie_secret))
-        ack.unrecognized = init.unrecognized.copy()
-        var pkt = self._new_packet(init.initiate_tag)
-        ack.encode(pkt, CHUNK_INIT_ACK)
-        finish_packet(pkt)
-        self._push_packet(pkt^)
+        # ACK, and nothing is remembered until the cookie comes back.
+        self._push_packet(init_ack_packet(self._cfg, init, now_ms))
 
     def _on_init_ack(mut self, value: Span[UInt8, _], now_ms: Int) raises:
         if self._state != SCTP_STATE_COOKIE_WAIT:
             self._stats.chunks_dropped += 1
             return
         var ack = decode_init(value)
-        if not self._valid_init(ack) or len(ack.cookie) == 0:
+        if not init_is_valid(ack) or len(ack.cookie) == 0:
             self._stats.chunks_dropped += 1
             return
         self._set_peer(
@@ -791,8 +674,7 @@ struct Association(Movable):
             ack.a_rwnd,
             ack.num_outbound_streams,
             ack.num_inbound_streams,
-            ack.forward_tsn_supported
-            or ack.supports_extension(CHUNK_FORWARD_TSN),
+            supports_forward_tsn(ack),
             ack.supports_extension(CHUNK_RECONFIG),
         )
         self._cookie_echo = ack.cookie.copy()
@@ -824,14 +706,9 @@ struct Association(Movable):
             return
         var age = now_ms - data.created_ms
         if age < 0 or age > self._cfg.cookie_lifetime_ms:
-            var pkt = self._new_packet(data.peer_tag)
-            var causes: List[ErrorCause] = []
-            var staleness = List[UInt8]()
-            put_u32(staleness, UInt32((age & 0xFFFFF) * 1000))
-            causes.append(ErrorCause(CAUSE_STALE_COOKIE, Span(staleness)))
-            encode_error(pkt, Span(causes))
-            finish_packet(pkt)
-            self._push_packet(pkt^)
+            self._push_packet(
+                stale_cookie_packet(self._cfg, data.peer_tag, age)
+            )
             raise Error("sctp: stale cookie")
         if not self._peer_known or self._peer_tag != data.peer_tag:
             self._set_peer(
@@ -849,28 +726,6 @@ struct Association(Movable):
         self._push_chunk(ack^)
 
     # ------------------------------------------------------------ dispatch
-
-    def _out_of_the_blue(mut self, packet: Span[UInt8, _], view: PacketView):
-        # RFC 9260 8.4: no association exists for this packet.
-        for c in view.chunks:
-            if c.kind == CHUNK_ABORT:
-                return
-        var first = view.chunks[0].kind
-        if (
-            first == CHUNK_SHUTDOWN_COMPLETE
-            or first == CHUNK_COOKIE_ACK
-            or first == CHUNK_ERROR
-            or first == CHUNK_INIT
-        ):
-            return
-        var pkt = self._new_packet(view.verification_tag)
-        if first == CHUNK_SHUTDOWN_ACK:
-            encode_shutdown_complete(pkt, True)
-        else:
-            var none = List[ErrorCause]()
-            encode_abort(pkt, True, Span(none))
-        finish_packet(pkt)
-        self._push_packet(pkt^)
 
     def _process(
         mut self, packet: Span[UInt8, _], view: PacketView, now_ms: Int
@@ -896,7 +751,8 @@ struct Association(Movable):
         if not tag_ok or (fresh and first.kind != CHUNK_COOKIE_ECHO):
             self._stats.packets_dropped += 1
             if fresh:
-                self._out_of_the_blue(packet, view)
+                # RFC 9260 8.4: no association exists for this packet.
+                self._push_packet(stray_reply(self._cfg, view))
             return
         for c in view.chunks:
             if self._ended:
@@ -962,19 +818,9 @@ struct Association(Movable):
             # Unknown chunk: the two high bits of the type say what to do.
             self._stats.chunks_dropped += 1
             if (c.kind & 0x40) != 0 and self._peer_known:
-                var report = List[UInt8]()
-                var causes: List[ErrorCause] = []
-                var header: List[UInt8] = [
-                    c.kind,
-                    c.flags,
-                    UInt8(((c.length + 4) >> 8) & 0xFF),
-                    UInt8((c.length + 4) & 0xFF),
-                ]
-                causes.append(
-                    ErrorCause(CAUSE_UNRECOGNIZED_CHUNK, Span(header))
+                self._push_chunk(
+                    unrecognized_chunk_report(c.kind, c.flags, c.length)
                 )
-                encode_error(report, Span(causes))
-                self._push_chunk(report^)
             if (c.kind & 0x80) == 0:
                 return False
         return True
@@ -1006,58 +852,30 @@ struct Association(Movable):
             self._queue_abort(CAUSE_NO_USER_DATA, Span(info))
             self._close("peer sent a DATA chunk without user data")
             return
-        var kind = self._tracker.classify(chunk.tsn)
-        if kind == TSN_DUPLICATE:
-            self._stats.duplicate_tsns += 1
-            if len(self._dup_tsns) < _MAX_DUPLICATE_REPORTS:
-                self._dup_tsns.append(chunk.tsn)
-            return
-        if kind == TSN_OUT_OF_WINDOW:
-            self._stats.chunks_dropped += 1
-            return
-        # Refuse what does not fit the receive buffer. Unread events alone
-        # may fill it: then the reader has to catch up first. Otherwise the
-        # next expected TSN gets extra room, so that a buffer full of later
-        # data cannot block the chunk that would release it.
-        var cost = len(chunk.payload) + CHUNK_BUFFER_OVERHEAD
-        var window = Int(self._cfg.a_rwnd)
-        var held = self._reasm.cost() + self._event_bytes
-        var fits = held + cost <= window
-        if not fits and chunk.tsn == self._tracker.cumulative_tsn() + 1:
-            fits = self._event_bytes + cost <= window and (
-                held + cost
-                <= window + self._cfg.max_message_size + self._cfg.mtu
-            )
-        if not fits or len(self._events) >= self._cfg.max_queued_events:
-            self._stats.chunks_dropped += 1
-            return
-        self._tracker.mark(chunk.tsn)
-        self._stats.data_chunks_in += 1
-        if Int(chunk.stream_id) >= self._in_streams:
-            var report = List[UInt8]()
-            var causes: List[ErrorCause] = []
-            var info: List[UInt8] = [
-                UInt8(chunk.stream_id >> 8),
-                UInt8(chunk.stream_id & 0xFF),
-                0,
-                0,
-            ]
-            causes.append(ErrorCause(CAUSE_INVALID_STREAM, Span(info)))
-            encode_error(report, Span(causes))
-            self._push_chunk(report^)
-            self._after_cumulative_change()
-            return
+        var stream_id = chunk.stream_id
         var messages = List[SctpMessage]()
-        var status = self._reasm.insert(
-            chunk^, self._tracker.cumulative_tsn(), messages
+        var status = self._receiver.on_data(
+            chunk^,
+            self._event_bytes,
+            len(self._events) >= self._cfg.max_queued_events,
+            messages,
         )
         self._deliver(messages)
-        if status == REASSEMBLY_TOO_LARGE:
+        if status == RECEIVE_DUPLICATE:
+            self._stats.duplicate_tsns += 1
+            return
+        if status == RECEIVE_REFUSED:
+            self._stats.chunks_dropped += 1
+            return
+        self._stats.data_chunks_in += 1
+        if status == RECEIVE_TOO_LARGE:
             var none = List[UInt8]()
             self._queue_abort(CAUSE_OUT_OF_RESOURCE, Span(none))
             self._close("peer sent a message larger than max_message_size")
             return
-        if status == REASSEMBLY_DISCARDED:
+        if status == RECEIVE_INVALID_STREAM:
+            self._push_chunk(invalid_stream_report(stream_id))
+        elif status != 0:
             self._stats.chunks_dropped += 1
         self._after_cumulative_change()
 
@@ -1068,41 +886,30 @@ struct Association(Movable):
         var fwd = decode_forward_tsn(value)
         # Like DATA, a FORWARD-TSN is answered with a SACK at once.
         self._saw_data = True
-        # A FORWARD-TSN at or behind the cumulative TSN leaves it alone but
-        # still names messages the sender gave up, so the buffers are
-        # cleaned either way.
-        self._tracker.forward(fwd.new_cumulative_tsn)
         var messages = List[SctpMessage]()
-        self._reasm.forward(
-            fwd.new_cumulative_tsn,
-            self._tracker.cumulative_tsn(),
-            Span(fwd.stream_ids),
-            Span(fwd.ssns),
-            messages,
-        )
+        self._receiver.on_forward_tsn(fwd, messages)
         self._deliver(messages)
         self._after_cumulative_change()
 
-    def _after_cumulative_change(mut self) raises:
-        if self._deferred_active and tsn_le(
-            self._deferred_last_tsn, self._tracker.cumulative_tsn()
-        ):
-            if len(self._events) < self._cfg.max_queued_events:
-                self._deferred_active = False
-                var streams = self._deferred_streams.copy()
-                self._perform_incoming_reset(self._deferred_seq, Span(streams))
+    def _apply_resets(
+        mut self, streams: List[UInt16], var response: List[UInt8]
+    ) raises:
+        for s in streams:
+            self._receiver.reset_stream(s)
+            var ev = SctpEvent(SCTP_EVENT_STREAM_RESET)
+            ev.stream_id = s
+            self._push_event(ev^)
+        self._push_chunk(response^)
 
-    def _build_sack(mut self) -> SackChunk:
-        var rwnd = self._advertised_rwnd()
-        self._last_rwnd = rwnd
-        var sack = SackChunk(self._tracker.cumulative_tsn(), UInt32(rwnd))
-        var room = (self._cfg.mtu - 12 - 16 - 4 * len(self._dup_tsns)) // 4
-        if room > _MAX_GAP_BLOCKS:
-            room = _MAX_GAP_BLOCKS
-        if room > 0:
-            sack.gaps = self._tracker.gap_blocks(room)
-        swap(sack.duplicates, self._dup_tsns)
-        return sack^
+    def _after_cumulative_change(mut self) raises:
+        # A reset request of the peer may have waited for missing data.
+        var streams = List[UInt16]()
+        var response = self._reset.on_cumulative_tsn(
+            self._receiver.cumulative_tsn(),
+            len(self._events) < self._cfg.max_queued_events,
+            streams,
+        )
+        self._apply_resets(streams, response^)
 
     # ---------------------------------------------------------------- send
 
@@ -1149,14 +956,14 @@ struct Association(Movable):
             out.extend(Span(chunk))
             chunks += 1
         if self._sack_needed:
-            var sack = self._build_sack()
+            var sack = self._receiver.build_sack(self._event_bytes)
             if chunks == 0 or len(out) + sack.encoded_size() <= mtu:
                 sack.encode(out)
                 self._sack_needed = False
                 chunks += 1
             else:
                 # Keep the duplicate reports for the SACK in the next packet.
-                swap(self._dup_tsns, sack.duplicates)
+                self._receiver.keep_duplicates(sack)
         if self._can_send_data():
             chunks += self._sender.fill(out, mtu, now_ms)
         if chunks == 0:
@@ -1168,60 +975,12 @@ struct Association(Movable):
 
     # ------------------------------------------------------------ reconfig
 
-    def _queue_reset_request(mut self):
-        var params: List[ReconfigParam] = []
-        params.append(
-            outgoing_reset_request(
-                self._reconf_seq,
-                self._peer_reconf_seq,
-                self._reconf_last_tsn,
-                Span(self._reconf_streams),
-            )
-        )
-        var chunk = List[UInt8]()
-        encode_reconfig(chunk, Span(params))
-        self._push_chunk(chunk^)
-
     def _pump_reconfig(mut self, now_ms: Int):
         if self._state != SCTP_STATE_ESTABLISHED:
             return
-        var ready = self._sender.take_reset_ready()
-        for s in ready:
-            self._reconf_waiting.append(s)
-        if self._reconf_active or len(self._reconf_waiting) == 0:
-            return
-        if not self._peer_reconfig:
-            # Nothing to negotiate with: just let the streams continue.
-            self._sender.finish_reset(Span(self._reconf_waiting), False)
-            self._reconf_waiting.clear()
-            return
-        self._reconf_active = True
-        self._reconf_seq = self._reconf_next_seq
-        self._reconf_next_seq += 1
-        self._reconf_last_tsn = self._sender.next_tsn() - 1
-        self._reconf_streams.clear()
-        swap(self._reconf_streams, self._reconf_waiting)
-        self._queue_reset_request()
-        self._t_reconf.start(now_ms + self._sender.rto.rto())
-
-    def _queue_reconfig_response(mut self, seq: UInt32, result: UInt32):
-        var params: List[ReconfigParam] = []
-        params.append(reconfig_response(seq, result))
-        var chunk = List[UInt8]()
-        encode_reconfig(chunk, Span(params))
-        self._push_chunk(chunk^)
-
-    def _perform_incoming_reset(
-        mut self, seq: UInt32, streams: Span[UInt16, _]
-    ) raises:
-        for s in streams:
-            self._reasm.reset_stream(s)
-            var ev = SctpEvent(SCTP_EVENT_STREAM_RESET)
-            ev.stream_id = s
-            self._push_event(ev^)
-        self._peer_reconf_seq = seq
-        self._peer_reconf_result = RECONFIG_RESULT_PERFORMED
-        self._queue_reconfig_response(seq, RECONFIG_RESULT_PERFORMED)
+        if self._reset.start_request(self._sender, self._peer_reconfig):
+            self._push_chunk(self._reset.request_chunk())
+            self._reset.timer.start(now_ms + self._sender.rto.rto())
 
     def _on_reconfig(mut self, value: Span[UInt8, _], now_ms: Int) raises:
         if not (
@@ -1233,76 +992,34 @@ struct Association(Movable):
             return
         var params = decode_reconfig(value)
         for i in range(len(params)):
-            var kind = params[i].kind
-            var seq = params[i].request_seq
-            if kind == PARAM_RECONFIG_RESPONSE:
-                self._on_reconfig_response(seq, params[i].result, now_ms)
-                continue
-            if kind < PARAM_OUTGOING_RESET or kind > 18:
-                continue
-            # A request. Its sequence number says whether it is new.
-            if seq == self._peer_reconf_seq:
-                self._queue_reconfig_response(seq, self._peer_reconf_result)
-                continue
-            if not tsn_gt(seq, self._peer_reconf_seq):
-                self._queue_reconfig_response(seq, RECONFIG_RESULT_BAD_SEQUENCE)
-                continue
-            if kind == PARAM_OUTGOING_RESET:
-                if len(self._events) >= self._cfg.max_queued_events:
-                    # No room to report it: let the peer retransmit.
+            if params[i].kind == PARAM_RECONFIG_RESPONSE:
+                var outcome = self._reset.on_response(
+                    params[i].request_seq, params[i].result, self._sender
+                )
+                if outcome == RESET_RESPONSE_IGNORED:
                     continue
-                if tsn_gt(params[i].last_tsn, self._tracker.cumulative_tsn()):
-                    # Data sent before the reset is still missing.
-                    self._deferred_active = True
-                    self._deferred_seq = seq
-                    self._deferred_last_tsn = params[i].last_tsn
-                    self._deferred_streams = params[i].streams.copy()
-                    self._queue_reconfig_response(
-                        seq, RECONFIG_RESULT_IN_PROGRESS
-                    )
-                    continue
-                self._deferred_active = False
-                self._perform_incoming_reset(seq, Span(params[i].streams))
-            elif kind == PARAM_INCOMING_RESET:
-                # The peer asks us to reset our outgoing streams.
-                self._peer_reconf_seq = seq
-                self._peer_reconf_result = RECONFIG_RESULT_PERFORMED
-                if self._state == SCTP_STATE_ESTABLISHED:
-                    for s in params[i].streams:
-                        self._sender.queue_reset(s)
-                else:
-                    self._peer_reconf_result = RECONFIG_RESULT_DENIED
-                self._queue_reconfig_response(seq, self._peer_reconf_result)
-            else:
-                self._peer_reconf_seq = seq
-                self._peer_reconf_result = RECONFIG_RESULT_DENIED
-                self._queue_reconfig_response(seq, RECONFIG_RESULT_DENIED)
-
-    def _on_reconfig_response(
-        mut self, seq: UInt32, result: UInt32, now_ms: Int
-    ):
-        if not self._reconf_active or seq != self._reconf_seq:
-            return
-        if result == RECONFIG_RESULT_IN_PROGRESS:
-            self._reconf_in_progress = True
-            self._error_count = 0
-            self._t_reconf.start(now_ms + self._sender.rto.rto())
-            return
-        self._reconf_in_progress = False
-        self._sender.finish_reset(
-            Span(self._reconf_streams), result <= RECONFIG_RESULT_PERFORMED
-        )
-        self._reconf_active = False
-        self._reconf_streams.clear()
-        self._t_reconf.stop()
-        self._error_count = 0
+                # Any answer to our request shows the peer is alive.
+                self._error_count = 0
+                if outcome == RESET_RESPONSE_IN_PROGRESS:
+                    self._reset.timer.start(now_ms + self._sender.rto.rto())
+                continue
+            var streams = List[UInt16]()
+            var response = self._reset.on_request(
+                params[i],
+                self._receiver.cumulative_tsn(),
+                len(self._events) < self._cfg.max_queued_events,
+                self._state == SCTP_STATE_ESTABLISHED,
+                self._sender,
+                streams,
+            )
+            self._apply_resets(streams, response^)
 
     # ------------------------------------------------- shutdown and errors
 
     def _send_shutdown_chunk(mut self):
         var chunk = List[UInt8]()
         if self._state == SCTP_STATE_SHUTDOWN_SENT:
-            encode_shutdown(chunk, self._tracker.cumulative_tsn())
+            encode_shutdown(chunk, self._receiver.cumulative_tsn())
         elif self._state == SCTP_STATE_SHUTDOWN_ACK_SENT:
             encode_shutdown_ack(chunk)
         else:
@@ -1318,7 +1035,7 @@ struct Association(Movable):
             self._state = SCTP_STATE_SHUTDOWN_ACK_SENT
         else:
             return
-        self._t_reconf.stop()
+        self._reset.timer.stop()
         self._send_shutdown_chunk()
         self._t2.start(now_ms + self._sender.rto.rto())
 
@@ -1349,22 +1066,7 @@ struct Association(Movable):
             self._state = SCTP_STATE_SHUTDOWN_RECEIVED
 
     def _on_abort(mut self, value: Span[UInt8, _]):
-        var reason = String("aborted by peer")
-        try:
-            var causes = decode_causes(value)
-            if len(causes) > 0:
-                if (
-                    causes[0].code == CAUSE_USER_INITIATED_ABORT
-                    or causes[0].code == CAUSE_PROTOCOL_VIOLATION
-                ) and len(causes[0].info) > 0:
-                    reason = String(
-                        t"aborted by peer: {_printable(Span(causes[0].info))}"
-                    )
-                else:
-                    reason = String(t"aborted by peer (cause {causes[0].code})")
-        except:
-            pass
-        self._close(reason^)
+        self._close(abort_reason(value))
 
     def _on_error(mut self, value: Span[UInt8, _], now_ms: Int) raises:
         var causes = decode_causes(value)

@@ -72,7 +72,9 @@ def test_error_chunk() raises:
     two.append(ErrorCause(2, Span(b)))
     var out = List[UInt8]()
     encode_error(out, Span(two))
-    assert_equal(hex_encode(Span(out)), "0900001200010005aa00000000020006bbcc0000")
+    assert_equal(
+        hex_encode(Span(out)), "0900001200010005aa00000000020006bbcc0000"
+    )
     var parsed = decode_causes(Span(out)[4:18])
     assert_equal(len(parsed), 2)
     assert_equal(parsed[1].code, 2)

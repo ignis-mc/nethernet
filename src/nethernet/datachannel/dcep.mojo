@@ -20,7 +20,9 @@ comptime PPID_BINARY_EMPTY = 57
 """Payload protocol identifier of an empty binary message."""
 
 comptime DCEP_ACK = 0x02
+"""Message type of DATA_CHANNEL_ACK."""
 comptime DCEP_OPEN = 0x03
+"""Message type of DATA_CHANNEL_OPEN."""
 
 comptime CHANNEL_RELIABLE = 0x00
 """Ordered, fully reliable."""
@@ -150,11 +152,9 @@ struct ChannelOpen(Copyable):
         var protocol = r.bytes(protocol_len)
         if not r.at_end():
             raise Error("DCEP: trailing bytes after DATA_CHANNEL_OPEN")
-        var open = ChannelOpen(
-            channel_type, reliability, StringSpan(unsafe_from_utf8=label)
-        )
+        var open = ChannelOpen(channel_type, reliability, String(from_utf8=label))
         open.priority = priority
-        open.protocol = String(unsafe_from_utf8=protocol)
+        open.protocol = String(from_utf8=protocol)
         return open^
 
 

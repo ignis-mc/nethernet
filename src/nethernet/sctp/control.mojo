@@ -5,11 +5,15 @@ INIT and INIT ACK, ABORT, the replies to packets that belong to no
 association, and the ERROR chunks that report what was not understood.
 """
 
-from ..wire import string_of
+from ..wire import put_u32
 from .cause import (
     CAUSE_INVALID_STREAM,
+    CAUSE_PROTOCOL_VIOLATION,
+    CAUSE_STALE_COOKIE,
     CAUSE_UNRECOGNIZED_CHUNK,
+    CAUSE_USER_INITIATED_ABORT,
     ErrorCause,
+    decode_causes,
     encode_abort,
     encode_error,
 )
@@ -49,7 +53,7 @@ def printable(text: Span[UInt8, _]) -> String:
         if len(out) >= _MAX_REASON_BYTES:
             break
         out.append(b if b >= 0x20 and b < 0x7F else UInt8(0x3F))
-    return string_of(Span(out))
+    return String(from_utf8_lossy=Span(out))
 
 
 def init_is_valid(init: InitChunk) -> Bool:
@@ -262,10 +266,82 @@ def invalid_stream_report(stream_id: UInt16) -> List[UInt8]:
         An ERROR chunk with an Invalid Stream Identifier cause.
     """
     var info: List[UInt8] = [
-        UInt8(stream_id >> 8), UInt8(stream_id & 0xFF), 0, 0
+        UInt8(stream_id >> 8),
+        UInt8(stream_id & 0xFF),
+        0,
+        0,
     ]
     var causes: List[ErrorCause] = []
     causes.append(ErrorCause(CAUSE_INVALID_STREAM, Span(info)))
     var report = List[UInt8]()
     encode_error(report, Span(causes))
     return report^
+
+
+def stale_cookie_packet(
+    cfg: SctpConfig, peer_tag: UInt32, age_ms: Int
+) -> List[UInt8]:
+    """Builds the ERROR packet that refuses an expired State Cookie.
+
+    Args:
+        cfg: The association configuration.
+        peer_tag: The peer's initiate tag, taken from the cookie.
+        age_ms: The age of the cookie in milliseconds.
+
+    Returns:
+        The complete packet, with a Stale Cookie cause whose measure of
+        staleness is in microseconds.
+    """
+    var staleness = List[UInt8]()
+    put_u32(staleness, UInt32((age_ms & 0xFFFFF) * 1000))
+    var causes: List[ErrorCause] = []
+    causes.append(ErrorCause(CAUSE_STALE_COOKIE, Span(staleness)))
+    var pkt = List[UInt8](capacity=32)
+    begin_packet(pkt, cfg.local_port, cfg.remote_port, peer_tag)
+    encode_error(pkt, Span(causes))
+    finish_packet(pkt)
+    return pkt^
+
+
+def abort_reason(value: Span[UInt8, _]) -> String:
+    """Describes a received ABORT for the closed event.
+
+    Args:
+        value: The value of the ABORT chunk.
+
+    Returns:
+        `aborted by peer`, followed by the peer's text for a user-initiated
+        abort or protocol violation, or by the first cause code.
+    """
+    try:
+        var causes = decode_causes(value)
+        if len(causes) > 0:
+            if (
+                causes[0].code == CAUSE_USER_INITIATED_ABORT
+                or causes[0].code == CAUSE_PROTOCOL_VIOLATION
+            ) and len(causes[0].info) > 0:
+                return String(
+                    t"aborted by peer: {printable(Span(causes[0].info))}"
+                )
+            return String(t"aborted by peer (cause {causes[0].code})")
+    except:
+        pass
+    return String("aborted by peer")
+
+
+def init_backoff(cfg: SctpConfig, attempts: Int) -> Int:
+    """Computes the T1 timeout after a number of expiries.
+
+    Args:
+        cfg: The association configuration.
+        attempts: How often T1 has expired so far.
+
+    Returns:
+        The initial RTO doubled once per expiry, capped at the maximum RTO.
+    """
+    var delay = cfg.rto_initial_ms
+    for _ in range(attempts):
+        delay *= 2
+        if delay >= cfg.rto_max_ms:
+            return cfg.rto_max_ms
+    return delay

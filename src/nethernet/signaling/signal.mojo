@@ -10,37 +10,69 @@ comptime SIGNAL_ERROR: StaticString = "CONNECTERROR"
 """Carries a decimal error code; the negotiation is over."""
 
 comptime ERROR_NONE = 0
+"""No error."""
 comptime ERROR_DESTINATION_NOT_LOGGED_IN = 1
+"""The destination is not logged in to the signaling service."""
 comptime ERROR_NEGOTIATION_TIMEOUT = 2
+"""The negotiation timed out."""
 comptime ERROR_WRONG_TRANSPORT_VERSION = 3
+"""The peers use different transport versions."""
 comptime ERROR_FAILED_TO_CREATE_PEER_CONNECTION = 4
+"""The peer connection could not be created."""
 comptime ERROR_ICE = 5
+"""ICE failed, for example no candidate could be gathered."""
 comptime ERROR_CONNECT_REQUEST = 6
+"""The offer could not be processed."""
 comptime ERROR_CONNECT_RESPONSE = 7
+"""The answer could not be processed."""
 comptime ERROR_CANDIDATE_ADD = 8
+"""A candidate could not be added."""
 comptime ERROR_INACTIVITY_TIMEOUT = 9
+"""The connection did not open in time after the answer."""
 comptime ERROR_FAILED_TO_CREATE_OFFER = 10
+"""The offer could not be created."""
 comptime ERROR_FAILED_TO_CREATE_ANSWER = 11
+"""The answer could not be created."""
 comptime ERROR_FAILED_TO_SET_LOCAL_DESCRIPTION = 12
+"""The local description could not be applied."""
 comptime ERROR_FAILED_TO_SET_REMOTE_DESCRIPTION = 13
+"""The remote description was rejected, for example malformed SDP."""
 comptime ERROR_NEGOTIATION_TIMEOUT_WAITING_FOR_RESPONSE = 14
+"""No answer arrived in time."""
 comptime ERROR_NEGOTIATION_TIMEOUT_WAITING_FOR_ACCEPT = 15
+"""The connection did not open in time on the listening side."""
 comptime ERROR_INCOMING_CONNECTION_IGNORED = 16
+"""The listener ignored the offer."""
 comptime ERROR_SIGNALING_PARSING_FAILURE = 17
+"""A signal could not be parsed."""
 comptime ERROR_SIGNALING_UNKNOWN_ERROR = 18
+"""The signaling service reported an unknown error."""
 comptime ERROR_SIGNALING_UNICAST_MESSAGE_DELIVERY_FAILED = 19
+"""A unicast signal could not be delivered."""
 comptime ERROR_SIGNALING_BROADCAST_DELIVERY_FAILED = 20
+"""A broadcast signal could not be delivered."""
 comptime ERROR_SIGNALING_MESSAGE_DELIVERY_FAILED = 21
+"""A signal could not be delivered."""
 comptime ERROR_SIGNALING_TURN_AUTH_FAILED = 22
+"""Relay credentials could not be obtained."""
 comptime ERROR_SIGNALING_FALLBACK_TO_BEST_EFFORT_DELIVERY = 23
+"""The signaling service fell back to best-effort delivery."""
 comptime ERROR_NO_SIGNALING_CHANNEL = 24
+"""No signaling channel is available."""
 comptime ERROR_NOT_LOGGED_IN = 25
+"""This end is not logged in to the signaling service."""
 comptime ERROR_SIGNALING_FAILED_TO_SEND = 26
+"""A signal could not be sent."""
 comptime ERROR_DATA_CHANNEL_CLOSED = 32
+"""A data channel was closed."""
 comptime ERROR_INVALID_ARGUMENT = 34
+"""An argument was invalid."""
 comptime ERROR_GENERIC_FAILURE = 35
+"""An unspecified failure."""
 comptime ERROR_FAILED_TO_CREATE_IDENTITY_ASSERTION = 36
+"""The identity assertion could not be created."""
 comptime ERROR_IDENTITY_NOT_ALLOWED = 37
+"""The peer's identity assertion was missing or rejected."""
 
 
 struct Signal(Copyable, Writable):

@@ -141,7 +141,9 @@ struct Sha512(Hash):
     """A streaming SHA-512 hasher."""
 
     comptime BLOCK_SIZE = 128
+    """The internal block size in bytes."""
     comptime DIGEST_SIZE = 64
+    """The digest size in bytes."""
 
     var _core: _Sha512Core
 
@@ -182,7 +184,9 @@ struct Sha384(Hash):
     """A streaming SHA-384 hasher."""
 
     comptime BLOCK_SIZE = 128
+    """The internal block size in bytes."""
     comptime DIGEST_SIZE = 48
+    """The digest size in bytes."""
 
     var _core: _Sha512Core
 

@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "skills": {
+    "mojo-syntax": {
+      "source": "modular/skills",
+      "ref": "a98d742c7a2ada9af97a04b222000b19a8d00df0",
+      "sourceType": "github",
+      "skillPath": "mojo-syntax/SKILL.md",
+      "computedHash": "7ae7d5cf619eeb06945ead66844351f4b7423825c19161111e5a191c2b1cb1e9"
+    },
+    "new-modular-project": {
+      "source": "modular/skills",
+      "ref": "a98d742c7a2ada9af97a04b222000b19a8d00df0",
+      "sourceType": "github",
+      "skillPath": "new-modular-project/SKILL.md",
+      "computedHash": "6c1eef97b94815bd807d76194fdffce4149aca92e0c14a242abfdf1c45efc75c"
+    }
+  }
+}

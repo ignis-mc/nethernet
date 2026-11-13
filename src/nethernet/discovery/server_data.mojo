@@ -3,10 +3,14 @@
 from ..wire import Reader, put_bytes
 
 comptime SERVER_DATA_VERSION = 7
+"""The `ServerData` layout version this module reads and writes."""
 
 comptime GAME_TYPE_SURVIVAL = 0
+"""Survival mode."""
 comptime GAME_TYPE_CREATIVE = 1
+"""Creative mode."""
 comptime GAME_TYPE_ADVENTURE = 2
+"""Adventure mode."""
 
 comptime CONNECTION_TYPE_LAN_SIGNALING = 4
 """`connection_type` of a world reachable through LAN signaling."""
@@ -48,7 +52,7 @@ def _varint32[o: ImmOrigin](mut r: Reader[o]) raises -> Int32:
 
 def _string[o: ImmOrigin](mut r: Reader[o]) raises -> String:
     var n = Int(_varuint32(r))
-    return String(unsafe_from_utf8=r.bytes(n))
+    return String(from_utf8=r.bytes(n))
 
 
 def _bool[o: ImmOrigin](mut r: Reader[o]) raises -> Bool:

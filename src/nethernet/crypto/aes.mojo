@@ -19,12 +19,14 @@ from std.sys.info import CompilationTarget, Endian
 from std.sys.intrinsics import llvm_intrinsic
 
 comptime AES_BLOCK_LEN = 16
+"""The AES block size in bytes."""
 
 # True when the AES-NI path is compiled in. `_has_feature` is the stdlib's
 # own (private) target-feature query; 1.2 has no public predicate for AES-NI.
 comptime AES_HARDWARE = (
     CompilationTarget.is_x86() and CompilationTarget._has_feature["aes"]()
 )
+"""Whether the AES-NI code path is compiled in for this target."""
 
 # Widest bitsliced counter-mode pass, in 64-bit lanes of four blocks each.
 comptime _CTR_LANES = 4 if CompilationTarget.has_avx2() else 2

@@ -266,9 +266,6 @@ struct Listener[S: Signaling](Movable):
     def poll(mut self, now_ms: Int) raises:
         """Processes signals and advances every pending negotiation.
 
-        Parameters:
-            now_ms: The current monotonic time in milliseconds.
-
         Args:
             now_ms: The current monotonic time in milliseconds.
 

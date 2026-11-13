@@ -7,22 +7,35 @@ from ..wire import put_bytes, put_u16, put_u48, put_u8
 from .handshake import DTLS_VERSION_1_2
 
 comptime CT_CHANGE_CIPHER_SPEC = 20
+"""Record content type `change_cipher_spec`."""
 comptime CT_ALERT = 21
+"""Record content type `alert`."""
 comptime CT_HANDSHAKE = 22
+"""Record content type `handshake`."""
 comptime CT_APPLICATION_DATA = 23
+"""Record content type `application_data`."""
 
 comptime RECORD_HEADER_LEN = 13
+"""The size of a DTLS record header in bytes."""
 comptime AEAD_OVERHEAD = 24
 """Bytes added by protection: an 8-byte explicit nonce and a 16-byte tag."""
 
 comptime ALERT_LEVEL_WARNING = 1
+"""Alert level `warning`."""
 comptime ALERT_LEVEL_FATAL = 2
+"""Alert level `fatal`."""
 comptime ALERT_CLOSE_NOTIFY = 0
+"""Alert `close_notify`: the sender is closing the connection."""
 comptime ALERT_HANDSHAKE_FAILURE = 40
+"""Alert `handshake_failure`."""
 comptime ALERT_BAD_CERTIFICATE = 42
+"""Alert `bad_certificate`."""
 comptime ALERT_ILLEGAL_PARAMETER = 47
+"""Alert `illegal_parameter`."""
 comptime ALERT_DECRYPT_ERROR = 51
+"""Alert `decrypt_error`."""
 comptime ALERT_INTERNAL_ERROR = 80
+"""Alert `internal_error`."""
 
 
 def put_record_header(

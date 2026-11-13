@@ -1,0 +1,15 @@
+# Install with: pixi x pre-commit install
+repos:
+  - repo: local
+    hooks:
+      - id: mojo-format
+        name: mojo format
+        entry: pixi run mojo format
+        language: system
+        files: '\.mojo$'
+      - id: mojo-docstrings
+        name: mojo docstrings
+        entry: pixi run lint-docs
+        language: system
+        files: '^src/.*\.mojo$'
+        pass_filenames: false

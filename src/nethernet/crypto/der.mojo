@@ -7,15 +7,25 @@ SubjectPublicKeyInfo structures and ECDSA signatures use.
 from ..wire import Reader, put_bytes
 
 comptime DER_INTEGER = 0x02
+"""Tag of an INTEGER."""
 comptime DER_BIT_STRING = 0x03
+"""Tag of a BIT STRING."""
 comptime DER_OCTET_STRING = 0x04
+"""Tag of an OCTET STRING."""
 comptime DER_OID = 0x06
+"""Tag of an OBJECT IDENTIFIER."""
 comptime DER_UTF8_STRING = 0x0C
+"""Tag of a UTF8String."""
 comptime DER_UTC_TIME = 0x17
+"""Tag of a UTCTime."""
 comptime DER_GENERALIZED_TIME = 0x18
+"""Tag of a GeneralizedTime."""
 comptime DER_SEQUENCE = 0x30
+"""Tag of a constructed SEQUENCE."""
 comptime DER_SET = 0x31
+"""Tag of a constructed SET."""
 comptime DER_CONTEXT_0 = 0xA0
+"""Tag of a constructed, context-specific `[0]` element."""
 
 
 struct DerValue[origin: ImmOrigin]:

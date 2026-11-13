@@ -76,7 +76,7 @@ def _verify_es384(
     signature_b64: StringSpan,
 ) raises -> Bool:
     var header = json_parse_object(
-        String(unsafe_from_utf8=Span(base64url_decode(header_b64)))
+        String(from_utf8=Span(base64url_decode(header_b64)))
     )
     if "alg" not in header or json_parse_string(header["alg"]) != "ES384":
         raise Error("identity: unsupported signature algorithm")
@@ -230,7 +230,7 @@ struct RemoteIdentity(Copyable):
                 assertion is not well formed.
         """
         var document = json_parse_object(
-            String(unsafe_from_utf8=Span(base64_decode(value)))
+            String(from_utf8=Span(base64_decode(value)))
         )
         var id = RemoteIdentity()
         if "assertion" not in document or "idp" not in document:
@@ -293,7 +293,7 @@ struct RemoteIdentity(Copyable):
         """
         var parts = _split3(self.token)
         var claims = json_parse_object(
-            String(unsafe_from_utf8=Span(base64url_decode(parts[1])))
+            String(from_utf8=Span(base64url_decode(parts[1])))
         )
         if "cpk" not in claims:
             raise Error("identity: token has no cpk claim")

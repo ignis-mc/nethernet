@@ -153,7 +153,7 @@ run_case mojo-to-go.http-anonymous-rejected 1 \
     "$MOJO_CLIENT --http 127.0.0.1:{PORT} --anonymous --expect-fail --timeout 30"
 run_case go-to-mojo.http 1 \
     "$MOJO_SERVER --http 127.0.0.1:{PORT} --conns 1 --timeout 60" \
-    "$GO http-dial -url http://127.0.0.1:{PORT} -identity -sizes 1,1000,70000,300000 -unreliable 4 -timeout 60s"
+    "$GO http-dial -url http://127.0.0.1:{PORT} -https-first -identity -sizes 1,1000,70000,300000 -unreliable 4 -timeout 60s"
 run_case go-to-mojo.http-anonymous 1 \
     "$MOJO_SERVER --http 127.0.0.1:{PORT} --allow-anonymous --conns 1 --timeout 60" \
     "$GO http-dial -url http://127.0.0.1:{PORT} -sizes 1,1000 -bye -timeout 60s"

@@ -12,6 +12,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -379,6 +380,7 @@ func httpListen(args []string) {
 func httpDial(args []string) {
 	fs := flag.NewFlagSet("http-dial", flag.ExitOnError)
 	url := fs.String("url", "", "base URL of the server, for example http://127.0.0.1:19132")
+	httpsFirst := fs.Bool("https-first", false, "probe HTTPS first and require it to fail fast")
 	sizes := fs.String("sizes", "1,2,100,1000", "comma-separated reliable message sizes")
 	unreliable := fs.Int("unreliable", 0, "number of unreliable messages to exchange")
 	identityless := fs.Bool("identityless", false, "accept answers without an identity")
@@ -393,6 +395,27 @@ func httpDial(args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	time.AfterFunc(*timeout, func() { fatalf("http-dial: timed out") })
+
+	if *httpsFirst {
+		// gophertunnel probes HTTPS before plain HTTP, and both share one
+		// time budget: a server that stalls on the TLS ClientHello is never
+		// reached over HTTP. The attempt must fail quickly.
+		started := time.Now()
+		insecure := &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+		}
+		tlsURL := "https://" + strings.TrimPrefix(*url, "http://") + "/v1/join"
+		if resp, err := insecure.Get(tlsURL); err == nil {
+			_ = resp.Body.Close()
+			fatalf("HTTPS probe unexpectedly succeeded")
+		}
+		if elapsed := time.Since(started); elapsed > time.Second {
+			fatalf("HTTPS probe took %v to fail", elapsed)
+		} else {
+			fmt.Printf("HTTPS_REJECTED %v\n", elapsed.Round(time.Millisecond))
+		}
+	}
 
 	// The probe gophertunnel sends before joining.
 	resp, err := http.Get(*url + "/v1/join")

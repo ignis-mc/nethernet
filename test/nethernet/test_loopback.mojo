@@ -1,4 +1,5 @@
 from nethernet.conn import RELIABLE, UNRELIABLE, Conn
+from nethernet.crypto.p384 import p384_public_key
 from nethernet.dialer import DialAttempt, DialConfig
 from nethernet.discovery.listener import DiscoveryListener
 from nethernet.discovery.server_data import ServerData
@@ -6,7 +7,7 @@ from nethernet.listener import ListenConfig, Listener
 from nethernet.os.addr import SocketAddr
 from nethernet.os.poll import PollSet
 from nethernet.os.time import monotonic_ms
-from nethernet.wire import bytes_of, string_of
+from nethernet.wire import bytes_of, hex_encode, string_of
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 comptime LOOPBACK = 0x7F000001
@@ -195,6 +196,86 @@ def test_two_connections_at_once() raises:
     assert_equal(string_of(Span(got_b)), "from b")
     assert_false(pair_a.acceptor.remote_network_id() == pair_b.acceptor.remote_network_id())
     assert_equal(listener.pending_count(), 0)
+
+
+def test_identities_are_exchanged_and_checked() raises:
+    var listener = _listener()
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    var pair = _connect(listener, client)
+    # Each side learned the other's P-384 identity key; the dialer's view is
+    # the key the listener signs every answer with.
+    var seen_by_dialer = pair.dialer.peer_public_key()
+    var seen_by_listener = pair.acceptor.peer_public_key()
+    assert_equal(len(seen_by_dialer), 97)
+    assert_equal(len(seen_by_listener), 97)
+    var expected = p384_public_key(Span(listener.identity_key()))
+    assert_equal(hex_encode(Span(seen_by_dialer)), hex_encode(Span(expected)))
+    assert_false(hex_encode(Span(seen_by_listener)) == hex_encode(Span(expected)))
+
+
+def test_anonymous_offer_is_rejected() raises:
+    var listener = _listener()
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    var host_id = listener.signaling().id()
+    client.add_peer(host_id, listener.signaling().local_addr(), monotonic_ms())
+    var config = DialConfig()
+    config.conn.bind_ip = LOOPBACK
+    config.anonymous = True
+    var attempt = DialAttempt(client, String(host_id), config)
+    var deadline = monotonic_ms() + 5000
+    while not attempt.is_done() and monotonic_ms() < deadline:
+        var now = monotonic_ms()
+        attempt.poll(client, now)
+        listener.poll(now)
+        var set = PollSet()
+        _ = set.add(client.poll_fd())
+        _ = set.add(listener.signaling().poll_fd())
+        _ = set.wait(5)
+    assert_true(attempt.is_done())
+    var reason = String()
+    try:
+        var unexpected = attempt^.finish()
+        unexpected.abort()
+    except e:
+        reason = String(e)
+    assert_true("error code 37" in reason)
+    assert_equal(listener.pending_count(), 0)
+    assert_true(listener.try_accept() is None)
+
+
+def test_dial_fails_when_the_peer_is_unknown() raises:
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    var config = DialConfig()
+    config.conn.bind_ip = LOOPBACK
+    var raised = False
+    try:
+        var attempt = DialAttempt(client, "424242", config)
+        _ = attempt.is_done()
+    except e:
+        raised = "no address" in String(e)
+    assert_true(raised)
+
+
+def test_unread_data_is_bounded() raises:
+    var discovery = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    discovery.disable_broadcast()
+    var listen_config = ListenConfig()
+    listen_config.conn.bind_ip = LOOPBACK
+    listen_config.conn.max_buffered_bytes = 100_000
+    var listener = Listener[DiscoveryListener](discovery^, listen_config)
+    var client = DiscoveryListener(SocketAddr(LOOPBACK, 0), 0, None)
+    client.disable_broadcast()
+    var pair = _connect(listener, client)
+    # The acceptor never reads; the dialer keeps sending.
+    var chunk = List[UInt8](length=20_000, fill=7)
+    for _ in range(10):
+        pair.dialer.send(Span(chunk))
+    _pump(pair.dialer, pair.acceptor, 500)
+    assert_true(pair.acceptor.is_closed())
+    assert_true("overflow" in pair.acceptor.close_reason())
 
 
 def main() raises:

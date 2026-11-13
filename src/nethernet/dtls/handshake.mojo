@@ -8,40 +8,69 @@ are skipped.
 from ..wire import Reader, put_bytes, put_u16, put_u24, put_u8
 
 comptime DTLS_VERSION_1_2 = 0xFEFD
+"""The wire encoding of DTLS 1.2."""
 comptime DTLS_VERSION_1_0 = 0xFEFF
+"""The wire encoding of DTLS 1.0, still seen in some record headers."""
 
 comptime HS_CLIENT_HELLO = 1
+"""Handshake message type `client_hello`."""
 comptime HS_SERVER_HELLO = 2
+"""Handshake message type `server_hello`."""
 comptime HS_HELLO_VERIFY_REQUEST = 3
+"""Handshake message type `hello_verify_request`."""
 comptime HS_CERTIFICATE = 11
+"""Handshake message type `certificate`."""
 comptime HS_SERVER_KEY_EXCHANGE = 12
+"""Handshake message type `server_key_exchange`."""
 comptime HS_CERTIFICATE_REQUEST = 13
+"""Handshake message type `certificate_request`."""
 comptime HS_SERVER_HELLO_DONE = 14
+"""Handshake message type `server_hello_done`."""
 comptime HS_CERTIFICATE_VERIFY = 15
+"""Handshake message type `certificate_verify`."""
 comptime HS_CLIENT_KEY_EXCHANGE = 16
+"""Handshake message type `client_key_exchange`."""
 comptime HS_FINISHED = 20
+"""Handshake message type `finished`."""
 
 comptime HS_HEADER_LEN = 12
+"""The size of the DTLS handshake header in bytes."""
 
 comptime CIPHER_ECDHE_ECDSA_AES128_GCM_SHA256 = 0xC02B
+"""`TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256`, the one suite implemented."""
 comptime GROUP_SECP256R1 = 0x0017
+"""The named group `secp256r1` (NIST P-256)."""
 comptime SIG_ECDSA_SHA256 = 0x0403
+"""Signature scheme `ecdsa_secp256r1_sha256`."""
 comptime SIG_ECDSA_SHA384 = 0x0503
+"""Signature scheme `ecdsa_secp384r1_sha384`."""
 comptime SIG_ECDSA_SHA512 = 0x0603
+"""Signature scheme `ecdsa_secp521r1_sha512`."""
 
 comptime EXT_SUPPORTED_GROUPS = 0x000A
+"""Extension type `supported_groups`."""
 comptime EXT_EC_POINT_FORMATS = 0x000B
+"""Extension type `ec_point_formats`."""
 comptime EXT_SIGNATURE_ALGORITHMS = 0x000D
+"""Extension type `signature_algorithms`."""
 comptime EXT_USE_SRTP = 0x000E
+"""Extension type `use_srtp`."""
 comptime EXT_EXTENDED_MASTER_SECRET = 0x0017
+"""Extension type `extended_master_secret`."""
 comptime EXT_RENEGOTIATION_INFO = 0xFF01
+"""Extension type `renegotiation_info`."""
 
 comptime SRTP_AES128_CM_HMAC_SHA1_80 = 0x0001
+"""SRTP protection profile `SRTP_AES128_CM_HMAC_SHA1_80`."""
 comptime SRTP_AEAD_AES_128_GCM = 0x0007
+"""SRTP protection profile `SRTP_AEAD_AES_128_GCM`."""
 comptime SRTP_AEAD_AES_256_GCM = 0x0008
+"""SRTP protection profile `SRTP_AEAD_AES_256_GCM`."""
 
 comptime CERT_TYPE_RSA_SIGN = 1
+"""Client certificate type `rsa_sign`."""
 comptime CERT_TYPE_ECDSA_SIGN = 64
+"""Client certificate type `ecdsa_sign`."""
 
 
 def put_handshake_header(

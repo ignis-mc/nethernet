@@ -25,13 +25,16 @@ from .aes import Aes, _load_le64
 from .ct import constant_time_eq
 
 comptime GCM_NONCE_LEN = 12
+"""The only nonce length supported, in bytes."""
 comptime GCM_TAG_LEN = 16
+"""The authentication tag length in bytes."""
 
 # True when the PCLMULQDQ GHASH is compiled in. `_has_feature` is the stdlib's
 # own (private) target-feature query; 1.2 has no public predicate for PCLMUL.
 comptime GCM_HARDWARE = (
     CompilationTarget.is_x86() and CompilationTarget._has_feature["pclmul"]()
 )
+"""Whether the PCLMULQDQ GHASH path is compiled in for this target."""
 
 # SP 800-38D limits a message to 2**39 - 256 bits so the counter cannot wrap.
 comptime _MAX_MESSAGE_LEN = (1 << 36) - 32

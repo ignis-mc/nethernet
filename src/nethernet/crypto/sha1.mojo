@@ -16,7 +16,9 @@ struct Sha1(Hash):
     """A streaming SHA-1 hasher."""
 
     comptime BLOCK_SIZE = 64
+    """The internal block size in bytes."""
     comptime DIGEST_SIZE = 20
+    """The digest size in bytes."""
 
     var _state: Array[UInt32, 5]
     var _block: Array[UInt8, 64]

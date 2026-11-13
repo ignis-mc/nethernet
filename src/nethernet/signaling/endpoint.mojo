@@ -80,8 +80,8 @@ def _header_value(head: Span[UInt8, _], name: StringSpan) -> Optional[String]:
                         same = False
                 if same:
                     return String(
-                        StringSpan(
-                            unsafe_from_utf8=line[len(want) + 1 : len(line)]
+                        String(
+                            from_utf8_lossy=line[len(want) + 1 : len(line)]
                         ).strip()
                     )
             line_start = i + 2
@@ -407,7 +407,7 @@ struct EndpointServer(Signaling):
             head[line_end] == 0x0D and head[line_end + 1] == 0x0A
         ):
             line_end += 1
-        var request_line = String(unsafe_from_utf8=head[0:line_end])
+        var request_line = String(from_utf8_lossy=head[0:line_end])
         var parts = request_line.split(" ")
         if len(parts) != 3:
             self._conns[index].respond(Span(_response("400 Bad Request", "", "")))
@@ -467,11 +467,16 @@ struct EndpointServer(Signaling):
                 self._conns[index].started_ms + _READ_TIMEOUT_MS
             )
             return True
-        var body = String(
-            unsafe_from_utf8=Span(self._conns[index].buf)[
-                head_end : head_end + body_len
-            ]
-        )
+        var body: String
+        try:
+            body = String(
+                from_utf8=Span(self._conns[index].buf)[
+                    head_end : head_end + body_len
+                ]
+            )
+        except:
+            self._conns[index].respond(Span(_response("400 Bad Request", "", "")))
+            return False
         var connection_id: UInt64
         try:
             connection_id = random_u64()
@@ -565,10 +570,12 @@ def _parse_response(buf: Span[UInt8, _], eof: Bool) raises -> Optional[HttpRespo
     var head = buf[0:head_end]
     if len(head) < 12 or head[0] != 0x48:
         raise Error("endpoint: malformed status line")
-    var code = _parse_uint(StringSpan(unsafe_from_utf8=head[9:12]), 3)
-    if code is None:
-        raise Error("endpoint: malformed status line")
-    var response = HttpResponse(Int(code.value()))
+    var status = 0
+    for i in range(9, 12):
+        if head[i] < 0x30 or head[i] > 0x39:
+            raise Error("endpoint: malformed status line")
+        status = status * 10 + Int(head[i] - 0x30)
+    var response = HttpResponse(status)
     var body = buf[head_end : len(buf)]
     var encoding = _header_value(head, "Transfer-Encoding").or_else(String())
     if "chunked" in encoding.lower():
@@ -674,7 +681,7 @@ struct EndpointClient(Signaling):
                     raise Error(
                         t"endpoint: probe answered with status {response.status}"
                     )
-                return String(unsafe_from_utf8=Span(response.body))
+                return String(from_utf8=Span(response.body))
             if n < 0:
                 var left = deadline - monotonic_ms()
                 if left <= 0 or not wait_readable(stream.fd(), left):
@@ -785,7 +792,7 @@ struct EndpointClient(Signaling):
                 code = ERROR_NEGOTIATION_TIMEOUT_WAITING_FOR_RESPONSE
             else:
                 var response = parsed.take()
-                var body = String(unsafe_from_utf8=Span(response.body))
+                var body = String(from_utf8=Span(response.body))
                 var numeric = _parse_uint(body.strip(), 10)
                 if numeric is not None and numeric.value() <= 0xFFFF_FFFF:
                     # A body that is just a number is an error code, whatever
