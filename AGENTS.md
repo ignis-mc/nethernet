@@ -93,6 +93,11 @@ def hmac[H: Hash](key: Span[UInt8, _], ...) -> Array[UInt8, H.DIGEST_SIZE]: ...
   safe at ASCII delimiters.
 - An `Array[UInt8, size_of[UInt32]()]` does not unify with
   `Array[UInt8, 4]`; build fixed arrays by hand instead of `as_bytes`.
+- A `Variant` whose largest arm is less aligned than another arm (for
+  example a 44-byte struct of 4-byte fields next to an arm holding a `List`
+  or `String`, aligned to 8) loses its tag when it is moved, such as when a
+  `List` of them grows; values change type and the heap can be corrupted.
+  Pad the large arm to 8-byte alignment (protocol PR #6, `item_stack.mojo`).
 
 ## Architecture
 
