@@ -64,9 +64,6 @@ struct Description(Copyable):
 
         Embedded candidates are written as `a=candidate` lines, and the first
         one supplies the address and port of the `c=` and `m=` lines.
-
-        Returns:
-            The SDP text.
         """
         var port = String("9")
         var address = String("0.0.0.0")
@@ -105,14 +102,7 @@ struct Description(Copyable):
         return out
 
     def fingerprint_bytes(self) raises -> List[UInt8]:
-        """Decodes the colon-separated fingerprint into raw digest bytes.
-
-        Returns:
-            The digest bytes.
-
-        Raises:
-            Error: If the fingerprint is not colon-separated hex bytes.
-        """
+        """Decodes the colon-separated fingerprint into raw digest bytes."""
         var hex = String()
         var parts = self.fingerprint.split(":")
         for p in parts:
@@ -141,15 +131,6 @@ def parse_description(text: StringSpan) raises -> Description:
     `ice-ufrag`, `ice-pwd`, `setup` and `max-message-size` at media level;
     `fingerprint` at media level or else session level; `identity` at session
     level; `candidate` at either level. Unknown lines are ignored.
-
-    Args:
-        text: The SDP document, with LF or CRLF line endings.
-
-    Returns:
-        The parsed description.
-
-    Raises:
-        Error: If a required attribute is missing or malformed.
     """
     var d = Description()
     d.max_message_size = 0

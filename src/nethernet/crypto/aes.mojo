@@ -617,14 +617,7 @@ struct Aes(Copyable):
     var _hw: Bool
 
     def __init__(out self, key: Span[UInt8, _]) raises:
-        """Expands a key.
-
-        Args:
-            key: The 16, 24 or 32 byte key.
-
-        Raises:
-            Error: If the key has any other length.
-        """
+        """Expands a key."""
         var key_len = len(key)
         if key_len != 16 and key_len != 24 and key_len != 32:
             raise Error("aes: key must be 16, 24 or 32 bytes")
@@ -675,15 +668,6 @@ struct Aes(Copyable):
 
         The result behaves exactly like `Aes(key)` but never uses the AES-NI
         path, even when `AES_HARDWARE` is true.
-
-        Args:
-            key: The 16, 24 or 32 byte key.
-
-        Returns:
-            The key schedule.
-
-        Raises:
-            Error: If the key has any other length.
         """
         var aes = Self(key)
         aes._hw = False
@@ -711,14 +695,7 @@ struct Aes(Copyable):
         return _aesdeclast(s, self._rk[0])
 
     def encrypt_block(self, block: Array[UInt8, 16]) -> Array[UInt8, 16]:
-        """Encrypts one block.
-
-        Args:
-            block: The plaintext block.
-
-        Returns:
-            The ciphertext block.
-        """
+        """Encrypts one block."""
         comptime if AES_HARDWARE:
             if self._hw:
                 return _store_block(self._hw_encrypt(_load_block(block)))
@@ -730,14 +707,7 @@ struct Aes(Copyable):
         return _block_out(q)
 
     def decrypt_block(self, block: Array[UInt8, 16]) -> Array[UInt8, 16]:
-        """Decrypts one block.
-
-        Args:
-            block: The ciphertext block.
-
-        Returns:
-            The plaintext block.
-        """
+        """Decrypts one block."""
         comptime if AES_HARDWARE:
             if self._hw:
                 return _store_block(self._hw_decrypt(_load_block(block)))

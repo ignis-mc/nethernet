@@ -79,15 +79,7 @@ struct InitChunk(Copyable):
         num_inbound_streams: UInt16,
         initial_tsn: UInt32,
     ):
-        """Creates a chunk with the fixed fields and no parameters.
-
-        Args:
-            initiate_tag: The sender's initiate tag.
-            a_rwnd: The advertised receiver window credit.
-            num_outbound_streams: The number of outbound streams.
-            num_inbound_streams: The number of inbound streams.
-            initial_tsn: The sender's initial TSN.
-        """
+        """Creates a chunk with the fixed fields and no parameters."""
         self.initiate_tag = initiate_tag
         self.a_rwnd = a_rwnd
         self.num_outbound_streams = num_outbound_streams
@@ -99,14 +91,7 @@ struct InitChunk(Copyable):
         self.unrecognized = List[UInt8]()
 
     def supports_extension(self, kind: UInt8) -> Bool:
-        """Checks whether a chunk type is listed in Supported Extensions.
-
-        Args:
-            kind: The chunk type to look for.
-
-        Returns:
-            `True` if the sender listed `kind`.
-        """
+        """Checks whether a chunk type is listed in Supported Extensions."""
         for e in self.extensions:
             if e == kind:
                 return True
@@ -117,10 +102,6 @@ struct InitChunk(Copyable):
 
         Parameters are written in the order State Cookie,
         Forward-TSN-Supported, Supported Extensions, Unrecognized Parameter.
-
-        Args:
-            out: The buffer to append to.
-            kind: `CHUNK_INIT` or `CHUNK_INIT_ACK`.
         """
         var start = begin_chunk(out, kind, 0)
         put_u32(out, self.initiate_tag)
@@ -174,15 +155,6 @@ def decode_init(value: Span[UInt8, _]) raises -> InitChunk:
     Unknown parameters are handled by their two high type bits: when the top
     bit is clear the remaining parameters are not processed, and when the next
     bit is set the parameter is collected in `unrecognized`.
-
-    Args:
-        value: The chunk value.
-
-    Returns:
-        The decoded chunk.
-
-    Raises:
-        Error: If the fixed fields or a parameter are truncated.
     """
     if len(value) < 16:
         raise Error("sctp: INIT shorter than its fixed fields")
@@ -225,17 +197,7 @@ def encode_data(
     flags: UInt8,
     payload: Span[UInt8, _],
 ):
-    """Appends a DATA chunk.
-
-    Args:
-        out: The buffer to append to.
-        tsn: The transmission sequence number.
-        stream_id: The stream identifier.
-        ssn: The stream sequence number.
-        ppid: The payload protocol identifier.
-        flags: A combination of the `DATA_FLAG_*` bits.
-        payload: The user data fragment.
-    """
+    """Appends a DATA chunk."""
     var start = begin_chunk(out, CHUNK_DATA, flags)
     put_u32(out, tsn)
     put_u16(out, stream_id)
@@ -270,16 +232,7 @@ struct DataChunk(Copyable):
         flags: UInt8,
         payload: Span[UInt8, _],
     ):
-        """Creates a chunk, copying the payload.
-
-        Args:
-            tsn: The transmission sequence number.
-            stream_id: The stream identifier.
-            ssn: The stream sequence number.
-            ppid: The payload protocol identifier.
-            flags: A combination of the `DATA_FLAG_*` bits.
-            payload: The user data fragment.
-        """
+        """Creates a chunk, copying the payload."""
         self.tsn = tsn
         self.stream_id = stream_id
         self.ssn = ssn
@@ -288,35 +241,19 @@ struct DataChunk(Copyable):
         self.payload = List[UInt8](payload)
 
     def unordered(self) -> Bool:
-        """Checks the U bit.
-
-        Returns:
-            `True` for unordered delivery.
-        """
+        """Checks the U bit."""
         return (self.flags & DATA_FLAG_UNORDERED) != 0
 
     def beginning(self) -> Bool:
-        """Checks the B bit.
-
-        Returns:
-            `True` if this is the first fragment of a message.
-        """
+        """Checks the B bit."""
         return (self.flags & DATA_FLAG_BEGIN) != 0
 
     def ending(self) -> Bool:
-        """Checks the E bit.
-
-        Returns:
-            `True` if this is the last fragment of a message.
-        """
+        """Checks the E bit."""
         return (self.flags & DATA_FLAG_END) != 0
 
     def encode(self, mut out: List[UInt8]):
-        """Appends the chunk.
-
-        Args:
-            out: The buffer to append to.
-        """
+        """Appends the chunk."""
         encode_data(
             out,
             self.tsn,
@@ -329,19 +266,7 @@ struct DataChunk(Copyable):
 
 
 def decode_data(value: Span[UInt8, _], flags: UInt8) raises -> DataChunk:
-    """Decodes the value of a DATA chunk.
-
-    Args:
-        value: The chunk value.
-        flags: The chunk flags.
-
-    Returns:
-        The decoded chunk. The payload may be empty, which RFC 9260 treats as
-        a protocol error the caller must act on.
-
-    Raises:
-        Error: If the value is shorter than the fixed fields.
-    """
+    """Decodes the value of a DATA chunk."""
     if len(value) < 12:
         raise Error("sctp: DATA shorter than its fixed fields")
     return DataChunk(
@@ -363,12 +288,7 @@ struct GapBlock(ImplicitlyCopyable):
     """The offset of the last TSN in the run."""
 
     def __init__(out self, start: UInt16, end: UInt16):
-        """Creates a gap ack block.
-
-        Args:
-            start: The offset of the first TSN in the run.
-            end: The offset of the last TSN in the run.
-        """
+        """Creates a gap ack block."""
         self.start = start
         self.end = end
 
@@ -386,23 +306,14 @@ struct SackChunk(Copyable):
     """TSNs received more than once since the last SACK."""
 
     def __init__(out self, cumulative_tsn: UInt32, a_rwnd: UInt32):
-        """Creates a SACK with no gap blocks and no duplicates.
-
-        Args:
-            cumulative_tsn: The cumulative TSN ack.
-            a_rwnd: The advertised receiver window credit.
-        """
+        """Creates a SACK with no gap blocks and no duplicates."""
         self.cumulative_tsn = cumulative_tsn
         self.a_rwnd = a_rwnd
         self.gaps = List[GapBlock]()
         self.duplicates = List[UInt32]()
 
     def encode(self, mut out: List[UInt8]):
-        """Appends the chunk.
-
-        Args:
-            out: The buffer to append to.
-        """
+        """Appends the chunk."""
         var start = begin_chunk(out, CHUNK_SACK, 0)
         put_u32(out, self.cumulative_tsn)
         put_u32(out, self.a_rwnd)
@@ -416,26 +327,12 @@ struct SackChunk(Copyable):
         end_chunk(out, start)
 
     def encoded_size(self) -> Int:
-        """Computes the size of the encoded chunk.
-
-        Returns:
-            The chunk size in bytes, header included.
-        """
+        """Computes the size of the encoded chunk."""
         return 16 + 4 * len(self.gaps) + 4 * len(self.duplicates)
 
 
 def decode_sack(value: Span[UInt8, _]) raises -> SackChunk:
-    """Decodes the value of a SACK chunk.
-
-    Args:
-        value: The chunk value.
-
-    Returns:
-        The decoded chunk.
-
-    Raises:
-        Error: If the value is shorter than its counts announce.
-    """
+    """Decodes the value of a SACK chunk."""
     var r = Reader(value)
     var sack = SackChunk(r.u32(), r.u32())
     var num_gaps = Int(r.u16())
@@ -462,21 +359,13 @@ struct ForwardTsnChunk(Copyable):
     """For each entry of `stream_ids`, the largest skipped sequence number."""
 
     def __init__(out self, new_cumulative_tsn: UInt32):
-        """Creates a chunk with no stream entries.
-
-        Args:
-            new_cumulative_tsn: The new cumulative TSN.
-        """
+        """Creates a chunk with no stream entries."""
         self.new_cumulative_tsn = new_cumulative_tsn
         self.stream_ids = List[UInt16]()
         self.ssns = List[UInt16]()
 
     def encode(self, mut out: List[UInt8]):
-        """Appends the chunk.
-
-        Args:
-            out: The buffer to append to.
-        """
+        """Appends the chunk."""
         var start = begin_chunk(out, CHUNK_FORWARD_TSN, 0)
         put_u32(out, self.new_cumulative_tsn)
         for i in range(len(self.stream_ids)):
@@ -486,17 +375,7 @@ struct ForwardTsnChunk(Copyable):
 
 
 def decode_forward_tsn(value: Span[UInt8, _]) raises -> ForwardTsnChunk:
-    """Decodes the value of a FORWARD-TSN chunk.
-
-    Args:
-        value: The chunk value.
-
-    Returns:
-        The decoded chunk.
-
-    Raises:
-        Error: If the value is truncated or ends inside a stream entry.
-    """
+    """Decodes the value of a FORWARD-TSN chunk."""
     var r = Reader(value)
     var chunk = ForwardTsnChunk(r.u32())
     if r.remaining() % 4 != 0:
@@ -508,86 +387,47 @@ def decode_forward_tsn(value: Span[UInt8, _]) raises -> ForwardTsnChunk:
 
 
 def encode_cookie_echo(mut out: List[UInt8], cookie: Span[UInt8, _]):
-    """Appends a COOKIE ECHO chunk.
-
-    Args:
-        out: The buffer to append to.
-        cookie: The State Cookie received in the INIT ACK.
-    """
+    """Appends a COOKIE ECHO chunk."""
     var start = begin_chunk(out, CHUNK_COOKIE_ECHO, 0)
     put_bytes(out, cookie)
     end_chunk(out, start)
 
 
 def encode_cookie_ack(mut out: List[UInt8]):
-    """Appends a COOKIE ACK chunk.
-
-    Args:
-        out: The buffer to append to.
-    """
+    """Appends a COOKIE ACK chunk."""
     var start = begin_chunk(out, CHUNK_COOKIE_ACK, 0)
     end_chunk(out, start)
 
 
 def encode_heartbeat(mut out: List[UInt8], kind: UInt8, info: Span[UInt8, _]):
-    """Appends a HEARTBEAT or HEARTBEAT ACK chunk.
-
-    Args:
-        out: The buffer to append to.
-        kind: `CHUNK_HEARTBEAT` or `CHUNK_HEARTBEAT_ACK`.
-        info: The chunk value: one Heartbeat Info parameter, header included.
-    """
+    """Appends a HEARTBEAT or HEARTBEAT ACK chunk."""
     var start = begin_chunk(out, kind, 0)
     put_bytes(out, info)
     end_chunk(out, start)
 
 
 def encode_shutdown(mut out: List[UInt8], cumulative_tsn: UInt32):
-    """Appends a SHUTDOWN chunk.
-
-    Args:
-        out: The buffer to append to.
-        cumulative_tsn: The sender's cumulative TSN ack.
-    """
+    """Appends a SHUTDOWN chunk."""
     var start = begin_chunk(out, CHUNK_SHUTDOWN, 0)
     put_u32(out, cumulative_tsn)
     end_chunk(out, start)
 
 
 def decode_shutdown(value: Span[UInt8, _]) raises -> UInt32:
-    """Decodes the value of a SHUTDOWN chunk.
-
-    Args:
-        value: The chunk value.
-
-    Returns:
-        The sender's cumulative TSN ack.
-
-    Raises:
-        Error: If the value is shorter than 4 bytes.
-    """
+    """Decodes the value of a SHUTDOWN chunk."""
     if len(value) < 4:
         raise Error("sctp: SHUTDOWN shorter than its fixed field")
     return get_u32(value, 0)
 
 
 def encode_shutdown_ack(mut out: List[UInt8]):
-    """Appends a SHUTDOWN ACK chunk.
-
-    Args:
-        out: The buffer to append to.
-    """
+    """Appends a SHUTDOWN ACK chunk."""
     var start = begin_chunk(out, CHUNK_SHUTDOWN_ACK, 0)
     end_chunk(out, start)
 
 
 def encode_shutdown_complete(mut out: List[UInt8], t_bit: Bool):
-    """Appends a SHUTDOWN COMPLETE chunk.
-
-    Args:
-        out: The buffer to append to.
-        t_bit: Whether the packet reflects the peer's verification tag.
-    """
+    """Appends a SHUTDOWN COMPLETE chunk."""
     var flags = UInt8(1) if t_bit else UInt8(0)
     var start = begin_chunk(out, CHUNK_SHUTDOWN_COMPLETE, flags)
     end_chunk(out, start)

@@ -62,12 +62,7 @@ struct StreamReset(Movable):
     var _deferred_streams: List[UInt16]
 
     def __init__(out self, initial_tsn: UInt32):
-        """Creates the bookkeeping with no request open.
-
-        Args:
-            initial_tsn: The local initial TSN, which is also the first
-                request sequence number.
-        """
+        """Creates the bookkeeping with no request open."""
         self.timer = Timer()
         self.in_progress = False
         self._next_seq = initial_tsn
@@ -84,20 +79,12 @@ struct StreamReset(Movable):
         self._deferred_streams = List[UInt16]()
 
     def set_peer(mut self, peer_initial_tsn: UInt32):
-        """Records the peer's initial TSN, its first request sequence number.
-
-        Args:
-            peer_initial_tsn: The initial TSN from the peer's INIT.
-        """
+        """Records the peer's initial TSN, its first request sequence number."""
         self._peer_seq = peer_initial_tsn - 1
         self._peer_result = 0
 
     def request_chunk(self) -> List[UInt8]:
-        """Encodes the open Outgoing SSN Reset Request.
-
-        Returns:
-            A RE-CONFIG chunk, the same bytes for every retransmission.
-        """
+        """Encodes the open Outgoing SSN Reset Request."""
         var params: List[ReconfigParam] = []
         params.append(
             outgoing_reset_request(
@@ -115,14 +102,6 @@ struct StreamReset(Movable):
 
         Only one request may be open at a time, so streams that become
         ready meanwhile wait for the next one.
-
-        Args:
-            sender: The send side, which says which resets are due.
-            peer_supports: Whether the peer announced RE-CONFIG support.
-
-        Returns:
-            `True` if a new request was opened: the caller sends
-            `request_chunk()` and starts `timer`.
         """
         var ready = sender.take_reset_ready()
         for s in ready:
@@ -146,17 +125,7 @@ struct StreamReset(Movable):
     def on_response(
         mut self, seq: UInt32, result: UInt32, mut sender: Sender
     ) -> Int:
-        """Handles a Re-configuration Response from the peer.
-
-        Args:
-            seq: The response sequence number.
-            result: The result code.
-            sender: The send side, whose streams continue once finished.
-
-        Returns:
-            `RESET_RESPONSE_IGNORED`, `RESET_RESPONSE_IN_PROGRESS` (the
-            caller restarts `timer`) or `RESET_RESPONSE_FINAL`.
-        """
+        """Handles a Re-configuration Response from the peer."""
         if not self._active or seq != self._seq:
             return RESET_RESPONSE_IGNORED
         if result == RECONFIG_RESULT_IN_PROGRESS:
@@ -193,21 +162,7 @@ struct StreamReset(Movable):
         mut sender: Sender,
         mut reset_streams: List[UInt16],
     ) -> List[UInt8]:
-        """Handles one request parameter from the peer.
-
-        Args:
-            param: A decoded request parameter.
-            cumulative_tsn: The receive side's cumulative TSN.
-            can_report: Whether there is room to report a stream reset.
-            can_reset_outgoing: Whether our own streams may be reset now.
-            sender: The send side, for an Incoming SSN Reset Request.
-            reset_streams: The list that inbound streams to reset now are
-                appended to.
-
-        Returns:
-            The RE-CONFIG chunk to answer with, or an empty list to stay
-            silent and let the peer retransmit.
-        """
+        """Handles one request parameter from the peer."""
         var none = List[UInt8]()
         var kind = param.kind
         var seq = param.request_seq
@@ -248,17 +203,7 @@ struct StreamReset(Movable):
         can_report: Bool,
         mut reset_streams: List[UInt16],
     ) -> List[UInt8]:
-        """Completes a peer request that waited for missing data.
-
-        Args:
-            cumulative_tsn: The receive side's cumulative TSN.
-            can_report: Whether there is room to report a stream reset.
-            reset_streams: The list that inbound streams to reset now are
-                appended to.
-
-        Returns:
-            The RE-CONFIG chunk to send, or an empty list.
-        """
+        """Completes a peer request that waited for missing data."""
         if (
             self._deferred_active
             and can_report

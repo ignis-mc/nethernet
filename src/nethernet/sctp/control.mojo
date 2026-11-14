@@ -39,15 +39,7 @@ comptime _MAX_REASON_BYTES = 256
 
 
 def printable(text: Span[UInt8, _]) -> String:
-    """Turns text supplied by the peer into a safe string.
-
-    Args:
-        text: Bytes from an error cause.
-
-    Returns:
-        At most 256 characters, with everything but printable ASCII replaced
-        by `?`.
-    """
+    """Turns text supplied by the peer into a safe string."""
     var out = List[UInt8]()
     for b in text:
         if len(out) >= _MAX_REASON_BYTES:
@@ -57,15 +49,7 @@ def printable(text: Span[UInt8, _]) -> String:
 
 
 def init_is_valid(init: InitChunk) -> Bool:
-    """Checks the mandatory fields of an INIT or INIT ACK.
-
-    Args:
-        init: The decoded chunk.
-
-    Returns:
-        `True` if the tag and stream counts are non-zero and the window is
-        at least 1500 bytes, as RFC 9260 section 3.3.2 requires.
-    """
+    """Checks the mandatory fields of an INIT or INIT ACK."""
     return (
         init.initiate_tag != 0
         and init.num_outbound_streams != 0
@@ -75,15 +59,7 @@ def init_is_valid(init: InitChunk) -> Bool:
 
 
 def supports_forward_tsn(init: InitChunk) -> Bool:
-    """Checks whether the sender of an INIT or INIT ACK does PR-SCTP.
-
-    Args:
-        init: The decoded chunk.
-
-    Returns:
-        `True` if it carries Forward-TSN-Supported (RFC 3758) or lists
-        FORWARD-TSN in Supported Extensions, which is all pion sends.
-    """
+    """Checks whether the sender of an INIT or INIT ACK does PR-SCTP."""
     return init.forward_tsn_supported or init.supports_extension(
         CHUNK_FORWARD_TSN
     )
@@ -94,12 +70,6 @@ def local_init(cfg: SctpConfig) -> InitChunk:
 
     RE-CONFIG and FORWARD-TSN are listed as supported extensions. I-DATA
     never is: pion would switch to it.
-
-    Args:
-        cfg: The association configuration.
-
-    Returns:
-        The chunk, without a cookie.
     """
     var init = InitChunk(
         cfg.local_tag,
@@ -114,14 +84,7 @@ def local_init(cfg: SctpConfig) -> InitChunk:
 
 
 def init_packet(cfg: SctpConfig) -> List[UInt8]:
-    """Builds the INIT packet, with verification tag 0.
-
-    Args:
-        cfg: The association configuration.
-
-    Returns:
-        The complete packet.
-    """
+    """Builds the INIT packet, with verification tag 0."""
     var pkt = List[UInt8](capacity=64)
     begin_packet(pkt, cfg.local_port, cfg.remote_port, 0)
     local_init(cfg).encode(pkt, CHUNK_INIT)
@@ -137,14 +100,6 @@ def init_ack_packet(
     The tag and TSN are the configured ones, so that an INIT of ours that
     crosses the peer's stays consistent with it. Everything COOKIE ECHO
     needs goes into the State Cookie; no state is kept (RFC 9260 5.1.3).
-
-    Args:
-        cfg: The association configuration.
-        init: The peer's valid INIT.
-        now_ms: The current time, stored in the cookie.
-
-    Returns:
-        The complete packet, addressed with the peer's initiate tag.
     """
     var data = CookieData()
     data.peer_tag = init.initiate_tag
@@ -173,18 +128,7 @@ def abort_packet(
     t_bit: Bool,
     causes: Span[ErrorCause, _],
 ) -> List[UInt8]:
-    """Builds an ABORT packet.
-
-    Args:
-        cfg: The association configuration.
-        tag: The verification tag: the peer's tag, or with `t_bit` the tag
-            of the packet being answered.
-        t_bit: Whether the tag is reflected.
-        causes: The error causes to report.
-
-    Returns:
-        The complete packet.
-    """
+    """Builds an ABORT packet."""
     var pkt = List[UInt8](capacity=64)
     begin_packet(pkt, cfg.local_port, cfg.remote_port, tag)
     encode_abort(pkt, t_bit, causes)
@@ -199,13 +143,6 @@ def stray_reply(cfg: SctpConfig, view: PacketView) -> List[UInt8]:
     tag with the T bit, or a SHUTDOWN COMPLETE for a SHUTDOWN ACK. Packets
     that contain an ABORT, and INIT, COOKIE ACK, ERROR and SHUTDOWN
     COMPLETE packets, get no answer.
-
-    Args:
-        cfg: The association configuration.
-        view: The parsed packet, with at least one chunk.
-
-    Returns:
-        The complete reply packet, or an empty list for no reply.
     """
     var pkt = List[UInt8]()
     for c in view.chunks:
@@ -232,17 +169,7 @@ def stray_reply(cfg: SctpConfig, view: PacketView) -> List[UInt8]:
 def unrecognized_chunk_report(
     kind: UInt8, flags: UInt8, value_length: Int
 ) -> List[UInt8]:
-    """Builds the ERROR chunk that reports an unknown chunk type.
-
-    Args:
-        kind: The type of the chunk that was not understood.
-        flags: Its flags.
-        value_length: The length of its value.
-
-    Returns:
-        An ERROR chunk with an Unrecognized Chunk Type cause that carries
-        the header of the offending chunk.
-    """
+    """Builds the ERROR chunk that reports an unknown chunk type."""
     var header: List[UInt8] = [
         kind,
         flags,
@@ -257,14 +184,7 @@ def unrecognized_chunk_report(
 
 
 def invalid_stream_report(stream_id: UInt16) -> List[UInt8]:
-    """Builds the ERROR chunk that reports DATA on a nonexistent stream.
-
-    Args:
-        stream_id: The stream identifier of the DATA chunk.
-
-    Returns:
-        An ERROR chunk with an Invalid Stream Identifier cause.
-    """
+    """Builds the ERROR chunk that reports DATA on a nonexistent stream."""
     var info: List[UInt8] = [
         UInt8(stream_id >> 8),
         UInt8(stream_id & 0xFF),
@@ -281,17 +201,7 @@ def invalid_stream_report(stream_id: UInt16) -> List[UInt8]:
 def stale_cookie_packet(
     cfg: SctpConfig, peer_tag: UInt32, age_ms: Int
 ) -> List[UInt8]:
-    """Builds the ERROR packet that refuses an expired State Cookie.
-
-    Args:
-        cfg: The association configuration.
-        peer_tag: The peer's initiate tag, taken from the cookie.
-        age_ms: The age of the cookie in milliseconds.
-
-    Returns:
-        The complete packet, with a Stale Cookie cause whose measure of
-        staleness is in microseconds.
-    """
+    """Builds the ERROR packet that refuses an expired State Cookie."""
     var staleness = List[UInt8]()
     put_u32(staleness, UInt32((age_ms & 0xFFFFF) * 1000))
     var causes: List[ErrorCause] = []
@@ -304,15 +214,7 @@ def stale_cookie_packet(
 
 
 def abort_reason(value: Span[UInt8, _]) -> String:
-    """Describes a received ABORT for the closed event.
-
-    Args:
-        value: The value of the ABORT chunk.
-
-    Returns:
-        `aborted by peer`, followed by the peer's text for a user-initiated
-        abort or protocol violation, or by the first cause code.
-    """
+    """Describes a received ABORT for the closed event."""
     try:
         var causes = decode_causes(value)
         if len(causes) > 0:
@@ -330,15 +232,7 @@ def abort_reason(value: Span[UInt8, _]) -> String:
 
 
 def init_backoff(cfg: SctpConfig, attempts: Int) -> Int:
-    """Computes the T1 timeout after a number of expiries.
-
-    Args:
-        cfg: The association configuration.
-        attempts: How often T1 has expired so far.
-
-    Returns:
-        The initial RTO doubled once per expiry, capped at the maximum RTO.
-    """
+    """Computes the T1 timeout after a number of expiries."""
     var delay = cfg.rto_initial_ms
     for _ in range(attempts):
         delay *= 2

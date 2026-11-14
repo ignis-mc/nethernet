@@ -53,15 +53,7 @@ comptime _ES384_HEADER: StaticString = '{"alg":"ES384"}'
 
 
 def fingerprint_payload(algorithm: StringSpan, digest: StringSpan) -> String:
-    """Builds the JWS payload that binds one DTLS fingerprint.
-
-    Args:
-        algorithm: The hash name exactly as in `a=fingerprint`.
-        digest: The colon-separated hex exactly as in `a=fingerprint`.
-
-    Returns:
-        The canonical JSON text both sides sign and verify.
-    """
+    """Builds the JWS payload that binds one DTLS fingerprint."""
     return String(
         t"{{\"fingerprint\":[{{\"algorithm\":{json_quote(algorithm)},\"digest\":{json_quote(digest)}}}]}}"
     )
@@ -119,13 +111,7 @@ struct Identity(Copyable):
         token: StringSpan,
         domain: StringSpan,
     ):
-        """Wraps an existing key and token, for example an Xbox-issued one.
-
-        Args:
-            private_key: The 48-byte P-384 private scalar.
-            token: The JWT that presents the matching public key.
-            domain: The identity-provider domain.
-        """
+        """Wraps an existing key and token, for example an Xbox-issued one."""
         self.private_key = List[UInt8](private_key)
         self.token = String(token)
         self.domain = String(domain)
@@ -137,21 +123,7 @@ struct Identity(Copyable):
         now_unix_s: Int,
         jwk: Bool,
     ) raises -> Identity:
-        """Issues a token signed by the key it presents.
-
-        Args:
-            private_key: The 48-byte P-384 private scalar.
-            domain: The identity-provider domain.
-            now_unix_s: The current wall-clock time in Unix seconds.
-            jwk: `True` to write the `cpk` claim as a JWK object (what
-                servers do), `False` for base64 PKIX DER (what clients do).
-
-        Returns:
-            The identity, valid for `TOKEN_LIFETIME_S` seconds.
-
-        Raises:
-            Error: If the private key is invalid.
-        """
+        """Issues a token signed by the key it presents."""
         var point = p384_public_key(private_key)
         var pkix = encode_ec_public_key_info(KEY_ALGORITHM_EC_P384, Span(point))
         var pkix_b64 = base64_encode(Span(pkix))
@@ -180,20 +152,7 @@ struct Identity(Copyable):
         )
 
     def sign(self, algorithm: StringSpan, digest: StringSpan) raises -> String:
-        """Produces the `a=identity` value for a DTLS fingerprint.
-
-        Args:
-            algorithm: The hash name exactly as it will appear in
-                `a=fingerprint`.
-            digest: The colon-separated hex exactly as it will appear in
-                `a=fingerprint`.
-
-        Returns:
-            The base64 text that follows `a=identity:`.
-
-        Raises:
-            Error: If signing fails.
-        """
+        """Produces the `a=identity` value for a DTLS fingerprint."""
         var header_b64 = base64url_encode(_ES384_HEADER.as_bytes())
         var payload = fingerprint_payload(algorithm, digest)
         var payload_b64 = base64url_encode(payload.as_bytes())
@@ -230,18 +189,7 @@ struct RemoteIdentity(Copyable):
 
     @staticmethod
     def parse(value: StringSpan) raises -> RemoteIdentity:
-        """Decodes the value of an `a=identity` attribute.
-
-        Args:
-            value: The base64 text that follows `a=identity:`.
-
-        Returns:
-            The decoded assertion.
-
-        Raises:
-            Error: If the base64 or the JSON inside is malformed, or the
-                assertion is not well formed.
-        """
+        """Decodes the value of an `a=identity` attribute."""
         var document = json_parse_object(
             String(from_utf8=Span(base64_decode(value)))
         )
@@ -265,12 +213,7 @@ struct RemoteIdentity(Copyable):
         return id^
 
     def is_valid(self) -> Bool:
-        """Checks the shape of the assertion without verifying signatures.
-
-        Returns:
-            `True` if both parts are three-part compact JWS strings and the
-            provider protocol is `default`.
-        """
+        """Checks the shape of the assertion without verifying signatures."""
 
         def dots(text: StringSpan) {} -> Int:
             var n = 0
@@ -290,22 +233,7 @@ struct RemoteIdentity(Copyable):
     def public_key(
         self, self_signed: Bool, now_unix_s: Int
     ) raises -> List[UInt8]:
-        """Extracts the P-384 public key the token presents.
-
-        Args:
-            self_signed: `True` to require that the token is signed by the
-                key it presents (time claims are then not checked); `False`
-                to check the time claims only, leaving the token's signature
-                to whoever trusts its issuer.
-            now_unix_s: The current wall-clock time in Unix seconds.
-
-        Returns:
-            The uncompressed 97-byte P-384 point.
-
-        Raises:
-            Error: If the token is malformed, uses another key type, fails
-                its own signature check, or is expired or not yet valid.
-        """
+        """Extracts the P-384 public key the token presents."""
         var parts = _split3(self.token)
         var claims = json_parse_object(
             String(from_utf8=Span(base64url_decode(parts[1])))
@@ -361,16 +289,7 @@ struct RemoteIdentity(Copyable):
         digest: StringSpan,
         public_key: Span[UInt8, _],
     ) raises:
-        """Checks that the key signed the given DTLS fingerprint.
-
-        Args:
-            algorithm: The hash name exactly as received in `a=fingerprint`.
-            digest: The digest text exactly as received in `a=fingerprint`.
-            public_key: The uncompressed P-384 point from `public_key()`.
-
-        Raises:
-            Error: If the JWS is malformed or the signature does not match.
-        """
+        """Checks that the key signed the given DTLS fingerprint."""
         var parts = _split3(self.fingerprints)
         if parts[1].byte_length() != 0:
             raise Error("identity: fingerprints assertion is not detached")

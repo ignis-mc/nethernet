@@ -15,11 +15,7 @@ struct Timer(ImplicitlyCopyable):
         self.deadline = 0
 
     def start(mut self, deadline: Int):
-        """Starts or restarts the timer.
-
-        Args:
-            deadline: The absolute time in milliseconds at which to fire.
-        """
+        """Starts or restarts the timer."""
         self.armed = True
         self.deadline = deadline
 
@@ -28,14 +24,7 @@ struct Timer(ImplicitlyCopyable):
         self.armed = False
 
     def expired(self, now_ms: Int) -> Bool:
-        """Checks whether the timer is due.
-
-        Args:
-            now_ms: The current time in milliseconds.
-
-        Returns:
-            `True` if the timer is running and its deadline has passed.
-        """
+        """Checks whether the timer is due."""
         return self.armed and self.deadline <= now_ms
 
 
@@ -54,13 +43,7 @@ struct RtoEstimator(ImplicitlyCopyable):
     var _max: Int
 
     def __init__(out self, initial_ms: Int, min_ms: Int, max_ms: Int):
-        """Creates an estimator with no measurement yet.
-
-        Args:
-            initial_ms: The timeout to use before the first measurement.
-            min_ms: The smallest timeout.
-            max_ms: The largest timeout.
-        """
+        """Creates an estimator with no measurement yet."""
         self._srtt8 = 0
         self._rttvar4 = 0
         self._has_sample = False
@@ -69,19 +52,11 @@ struct RtoEstimator(ImplicitlyCopyable):
         self._max = max_ms
 
     def rto(self) -> Int:
-        """Returns the current retransmission timeout.
-
-        Returns:
-            The timeout in milliseconds, including any backoff.
-        """
+        """Returns the current retransmission timeout."""
         return self._rto
 
     def srtt(self) -> Int:
-        """Returns the smoothed round-trip time.
-
-        Returns:
-            The estimate in milliseconds, or 0 before the first measurement.
-        """
+        """Returns the smoothed round-trip time."""
         return self._srtt8 >> 3
 
     def observe(mut self, rtt_ms: Int):
@@ -89,9 +64,6 @@ struct RtoEstimator(ImplicitlyCopyable):
 
         Per Karn's rule the caller must only measure chunks that were sent
         exactly once.
-
-        Args:
-            rtt_ms: The measured round-trip time in milliseconds.
         """
         var r = rtt_ms
         if r < 0:

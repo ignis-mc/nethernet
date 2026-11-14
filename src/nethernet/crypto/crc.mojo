@@ -27,13 +27,6 @@ def crc32_update(crc: UInt32, data: Span[UInt8, _]) -> UInt32:
     """Feeds more bytes into a running CRC-32.
 
     Start with `0xFFFFFFFF` and invert the final value, or use `crc32()`.
-
-    Args:
-        crc: The running (non-inverted) register value.
-        data: The bytes to add.
-
-    Returns:
-        The updated register value.
     """
     ref table = global_constant[_CRC32_TABLE]()
     var c = crc
@@ -43,14 +36,7 @@ def crc32_update(crc: UInt32, data: Span[UInt8, _]) -> UInt32:
 
 
 def crc32(data: Span[UInt8, _]) -> UInt32:
-    """Computes the IEEE CRC-32 of `data`.
-
-    Args:
-        data: The bytes to checksum.
-
-    Returns:
-        The checksum, as used by zlib and STUN.
-    """
+    """Computes the IEEE CRC-32 of `data`."""
     return ~crc32_update(0xFFFFFFFF, data)
 
 
@@ -58,13 +44,6 @@ def crc32c_update(crc: UInt32, data: Span[UInt8, _]) -> UInt32:
     """Feeds more bytes into a running CRC-32C.
 
     Start with `0xFFFFFFFF` and invert the final value, or use `crc32c()`.
-
-    Args:
-        crc: The running (non-inverted) register value.
-        data: The bytes to add.
-
-    Returns:
-        The updated register value.
     """
     ref table = global_constant[_CRC32C_TABLE]()
     var c = crc
@@ -74,12 +53,5 @@ def crc32c_update(crc: UInt32, data: Span[UInt8, _]) -> UInt32:
 
 
 def crc32c(data: Span[UInt8, _]) -> UInt32:
-    """Computes the CRC-32C (Castagnoli) of `data`.
-
-    Args:
-        data: The bytes to checksum.
-
-    Returns:
-        The checksum, as used by SCTP and iSCSI.
-    """
+    """Computes the CRC-32C (Castagnoli) of `data`."""
     return ~crc32c_update(0xFFFFFFFF, data)

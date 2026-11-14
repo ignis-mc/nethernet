@@ -51,30 +51,12 @@ def _mask_if_zero(x: UInt64) -> UInt64:
 
 @inline(.always)
 def ct_word_eq(a: UInt64, b: UInt64) -> UInt64:
-    """Compares two words for equality in constant time.
-
-    Args:
-        a: The first word.
-        b: The second word.
-
-    Returns:
-        A mask with all bits set if `a == b`, and zero otherwise.
-    """
+    """Compares two words for equality in constant time."""
     return _mask_if_zero(a ^ b)
 
 
 def ct_is_zero[n: Int](a: Array[UInt64, n]) -> UInt64:
-    """Tests a number for zero in constant time.
-
-    Parameters:
-        n: The limb count.
-
-    Args:
-        a: The number to test.
-
-    Returns:
-        A mask with all bits set if `a` is zero, and zero otherwise.
-    """
+    """Tests a number for zero in constant time."""
     var acc = UInt64(0)
     for i in range(n):
         acc |= a[i]
@@ -82,18 +64,7 @@ def ct_is_zero[n: Int](a: Array[UInt64, n]) -> UInt64:
 
 
 def ct_eq[n: Int](a: Array[UInt64, n], b: Array[UInt64, n]) -> UInt64:
-    """Compares two numbers for equality in constant time.
-
-    Parameters:
-        n: The limb count.
-
-    Args:
-        a: The first number.
-        b: The second number.
-
-    Returns:
-        A mask with all bits set if `a == b`, and zero otherwise.
-    """
+    """Compares two numbers for equality in constant time."""
     var acc = UInt64(0)
     for i in range(n):
         acc |= a[i] ^ b[i]
@@ -101,18 +72,7 @@ def ct_eq[n: Int](a: Array[UInt64, n], b: Array[UInt64, n]) -> UInt64:
 
 
 def ct_lt[n: Int](a: Array[UInt64, n], b: Array[UInt64, n]) -> UInt64:
-    """Compares two numbers as unsigned integers in constant time.
-
-    Parameters:
-        n: The limb count.
-
-    Args:
-        a: The first number.
-        b: The second number.
-
-    Returns:
-        A mask with all bits set if `a < b`, and zero otherwise.
-    """
+    """Compares two numbers as unsigned integers in constant time."""
     var borrow = UInt64(0)
     for i in range(n):
         var d = UInt128(a[i]) - UInt128(b[i]) - UInt128(borrow)
@@ -124,20 +84,7 @@ def ct_lt[n: Int](a: Array[UInt64, n], b: Array[UInt64, n]) -> UInt64:
 def ct_select[
     n: Int
 ](mask: UInt64, a: Array[UInt64, n], b: Array[UInt64, n]) -> Array[UInt64, n]:
-    """Chooses between two numbers in constant time.
-
-    Parameters:
-        n: The limb count.
-
-    Args:
-        mask: All ones to choose `a`, zero to choose `b`. Other values are
-            not allowed.
-        a: The number returned when `mask` is all ones.
-        b: The number returned when `mask` is zero.
-
-    Returns:
-        A copy of the chosen number.
-    """
+    """Chooses between two numbers in constant time."""
     var out = Array[UInt64, n](fill=0)
     var m = _value_barrier(mask)
     for i in range(n):
@@ -148,17 +95,7 @@ def ct_select[
 def ct_swap[
     n: Int
 ](mask: UInt64, mut a: Array[UInt64, n], mut b: Array[UInt64, n]):
-    """Exchanges two numbers in constant time when asked to.
-
-    Parameters:
-        n: The limb count.
-
-    Args:
-        mask: All ones to swap, zero to leave both unchanged. Other values
-            are not allowed.
-        a: The first number.
-        b: The second number.
-    """
+    """Exchanges two numbers in constant time when asked to."""
     var m = _value_barrier(mask)
     for i in range(n):
         var t = m & (a[i] ^ b[i])
@@ -171,15 +108,6 @@ def limbs_from_be_bytes[n: Int](data: Span[UInt8, _]) -> Array[UInt64, n]:
 
     Spans shorter than `8 * n` bytes are treated as if padded with leading
     zeros. Of longer spans only the last `8 * n` bytes are used.
-
-    Parameters:
-        n: The limb count.
-
-    Args:
-        data: The big-endian bytes.
-
-    Returns:
-        The integer, modulo `2^(64 n)`, as little-endian limbs.
     """
     var out = Array[UInt64, n](fill=0)
     var count = len(data)
@@ -193,17 +121,7 @@ def limbs_from_be_bytes[n: Int](data: Span[UInt8, _]) -> Array[UInt64, n]:
 
 
 def limbs_to_be_bytes[n: Int](a: Array[UInt64, n]) -> Array[UInt8, 8 * n]:
-    """Encodes limbs as a fixed-width big-endian unsigned integer.
-
-    Parameters:
-        n: The limb count.
-
-    Args:
-        a: The number to encode.
-
-    Returns:
-        The `8 * n` big-endian bytes of `a`.
-    """
+    """Encodes limbs as a fixed-width big-endian unsigned integer."""
     var out = Array[UInt8, 8 * n](fill=0)
     for k in range(8 * n):
         out[8 * n - 1 - k] = UInt8((a[k >> 3] >> UInt64(8 * (k & 7))) & 0xFF)
@@ -217,16 +135,6 @@ def limbs_reduce_be_bytes[
 
     The modulus may be even. The reduction shifts in one bit at a time, so
     the running time depends only on `len(data)` and `n`.
-
-    Parameters:
-        n: The limb count.
-
-    Args:
-        data: The big-endian bytes of the integer to reduce.
-        modulus: The modulus, which must not be zero.
-
-    Returns:
-        The integer modulo `modulus`.
     """
     var acc = Array[UInt64, n](fill=0)
     var diff = Array[UInt64, n](fill=0)
@@ -269,9 +177,6 @@ struct Modulus[n: Int](Copyable):
     `a` is in Montgomery form when it is stored as `a * R mod m` with
     `R = 2^(64 n)`; `mul()` then maps two Montgomery-form values to the
     Montgomery form of their product.
-
-    Parameters:
-        n: The limb count.
     """
 
     var m: Array[UInt64, Self.n]
@@ -286,18 +191,7 @@ struct Modulus[n: Int](Copyable):
     """The exponent `m - 2`, used by `inv()`."""
 
     def __init__(out self, modulus: Array[UInt64, Self.n]):
-        """Derives the Montgomery constants of a modulus.
-
-        Args:
-            modulus: The modulus as little-endian limbs. It must be odd and
-                at least 3.
-
-        Constraints:
-            Runs at run time only; the compile-time interpreter rejects
-            the inline assembly behind the constant-time masks. For
-            `comptime` constants use the constructor that takes
-            precomputed values.
-        """
+        """Derives the Montgomery constants of a modulus."""
         self.m = modulus.copy()
         # Newton iteration doubles the number of correct low bits each round.
         var inv = UInt64(1)
@@ -325,14 +219,7 @@ struct Modulus[n: Int](Copyable):
         one: Array[UInt64, Self.n],
         rr: Array[UInt64, Self.n],
     ):
-        """Wraps precomputed Montgomery constants without checking them.
-
-        Args:
-            modulus: The modulus as little-endian limbs; odd and at least 3.
-            m0_inv: The value `-modulus^-1 mod 2^64`.
-            one: The value `2^(64 n) mod modulus`.
-            rr: The value `2^(128 n) mod modulus`.
-        """
+        """Wraps precomputed Montgomery constants without checking them."""
         self.m = modulus.copy()
         self.m0_inv = m0_inv
         self.one = one.copy()
@@ -343,15 +230,7 @@ struct Modulus[n: Int](Copyable):
     def add(
         self, a: Array[UInt64, Self.n], b: Array[UInt64, Self.n]
     ) -> Array[UInt64, Self.n]:
-        """Adds two reduced values modulo `m` in constant time.
-
-        Args:
-            a: The first addend, in `[0, m)`.
-            b: The second addend, in `[0, m)`.
-
-        Returns:
-            The sum `a + b mod m`.
-        """
+        """Adds two reduced values modulo `m` in constant time."""
         var sum = Array[UInt64, Self.n](fill=0)
         var carry = UInt64(0)
         comptime for i in range(Self.n):
@@ -381,15 +260,7 @@ struct Modulus[n: Int](Copyable):
     def sub(
         self, a: Array[UInt64, Self.n], b: Array[UInt64, Self.n]
     ) -> Array[UInt64, Self.n]:
-        """Subtracts two reduced values modulo `m` in constant time.
-
-        Args:
-            a: The minuend, in `[0, m)`.
-            b: The subtrahend, in `[0, m)`.
-
-        Returns:
-            The difference `a - b mod m`.
-        """
+        """Subtracts two reduced values modulo `m` in constant time."""
         var out = Array[UInt64, Self.n](fill=0)
         var borrow = UInt64(0)
         comptime for i in range(Self.n):
@@ -405,42 +276,19 @@ struct Modulus[n: Int](Copyable):
         return out^
 
     def neg(self, a: Array[UInt64, Self.n]) -> Array[UInt64, Self.n]:
-        """Negates a reduced value modulo `m` in constant time.
-
-        Args:
-            a: The value to negate, in `[0, m)`.
-
-        Returns:
-            The value `-a mod m`.
-        """
+        """Negates a reduced value modulo `m` in constant time."""
         var zero = Array[UInt64, Self.n](fill=0)
         return self.sub(zero, a)
 
     def reduce_once(self, a: Array[UInt64, Self.n]) -> Array[UInt64, Self.n]:
-        """Reduces a value below `2 m` with one constant-time subtraction.
-
-        Args:
-            a: The value to reduce, in `[0, 2 m)`.
-
-        Returns:
-            The value `a mod m`.
-        """
+        """Reduces a value below `2 m` with one constant-time subtraction."""
         return self._reduce_once(a, 0)
 
     @inline(.always)
     def mul(
         self, a: Array[UInt64, Self.n], b: Array[UInt64, Self.n]
     ) -> Array[UInt64, Self.n]:
-        """Computes the Montgomery product in constant time.
-
-        Args:
-            a: The first factor, in `[0, m)`.
-            b: The second factor, in `[0, m)`.
-
-        Returns:
-            The value `a * b * R^-1 mod m`. If both factors are in
-            Montgomery form, this is the Montgomery form of their product.
-        """
+        """Computes the Montgomery product in constant time."""
         # Coarsely integrated operand scanning; t has one extra limb and
         # `top` holds the overflow above it.
         var t = Array[UInt64, Self.n](fill=0)
@@ -469,36 +317,15 @@ struct Modulus[n: Int](Copyable):
 
     @inline(.always)
     def square(self, a: Array[UInt64, Self.n]) -> Array[UInt64, Self.n]:
-        """Computes the Montgomery square in constant time.
-
-        Args:
-            a: The value to square, in `[0, m)`.
-
-        Returns:
-            The value `a * a * R^-1 mod m`.
-        """
+        """Computes the Montgomery square in constant time."""
         return self.mul(a, a)
 
     def to_mont(self, a: Array[UInt64, Self.n]) -> Array[UInt64, Self.n]:
-        """Converts a reduced value into Montgomery form in constant time.
-
-        Args:
-            a: The value to convert, in `[0, m)`.
-
-        Returns:
-            The value `a * R mod m`.
-        """
+        """Converts a reduced value into Montgomery form in constant time."""
         return self.mul(a, self.rr)
 
     def from_mont(self, a: Array[UInt64, Self.n]) -> Array[UInt64, Self.n]:
-        """Converts a value out of Montgomery form in constant time.
-
-        Args:
-            a: The Montgomery-form value, in `[0, m)`.
-
-        Returns:
-            The value `a * R^-1 mod m`, in `[0, m)`.
-        """
+        """Converts a value out of Montgomery form in constant time."""
         var unit = Array[UInt64, Self.n](fill=0)
         unit[0] = 1
         return self.mul(a, unit)
@@ -511,13 +338,6 @@ struct Modulus[n: Int](Copyable):
         Constant-time in `a`, but variable-time in `exponent`: the sequence
         of multiplications and the table indices follow the exponent bits.
         Only pass exponents that are public.
-
-        Args:
-            a: The base in Montgomery form, in `[0, m)`.
-            exponent: The public exponent.
-
-        Returns:
-            The Montgomery form of the base raised to `exponent`.
         """
         # Fixed 4-bit windows over powers a^0 .. a^15.
         var table = List[Array[UInt64, Self.n]](capacity=16)
@@ -541,12 +361,5 @@ struct Modulus[n: Int](Copyable):
 
         Uses Fermat's little theorem, `a^(m-2)`. The exponent is the public
         constant `m - 2`, so the running time does not depend on `a`.
-
-        Args:
-            a: The value to invert, in Montgomery form, in `[0, m)`.
-
-        Returns:
-            The Montgomery form of the inverse, or zero if `a` is zero. The
-            result is meaningless unless `m` is prime.
         """
         return self.pow(a, self.m_minus_2)

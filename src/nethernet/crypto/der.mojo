@@ -29,11 +29,7 @@ comptime DER_CONTEXT_0 = 0xA0
 
 
 struct DerValue[origin: ImmOrigin]:
-    """One decoded TLV: a tag and a view of its content.
-
-    Parameters:
-        origin: The origin of the encoded bytes.
-    """
+    """One decoded TLV: a tag and a view of its content."""
 
     var tag: UInt8
     """The identifier octet."""
@@ -41,32 +37,13 @@ struct DerValue[origin: ImmOrigin]:
     """The content octets."""
 
     def __init__(out self, tag: UInt8, content: Span[UInt8, Self.origin]):
-        """Creates a value.
-
-        Args:
-            tag: The identifier octet.
-            content: The content octets.
-        """
+        """Creates a value."""
         self.tag = tag
         self.content = content
 
 
 def der_next[o: ImmOrigin](mut r: Reader[o]) raises -> DerValue[o]:
-    """Reads the next TLV.
-
-    Parameters:
-        o: The origin of the encoded bytes.
-
-    Args:
-        r: The reader positioned at an identifier octet.
-
-    Returns:
-        The tag and a view of the content.
-
-    Raises:
-        Error: If the encoding is truncated, uses a multi-byte tag, an
-            indefinite length, or a non-minimal length.
-    """
+    """Reads the next TLV."""
     var tag = r.u8()
     if (tag & 0x1F) == 0x1F:
         raise Error("DER: multi-byte tags are not supported")
@@ -88,21 +65,7 @@ def der_next[o: ImmOrigin](mut r: Reader[o]) raises -> DerValue[o]:
 def der_expect[
     o: ImmOrigin
 ](mut r: Reader[o], tag: UInt8) raises -> Span[UInt8, o]:
-    """Reads the next TLV and checks its tag.
-
-    Parameters:
-        o: The origin of the encoded bytes.
-
-    Args:
-        r: The reader positioned at an identifier octet.
-        tag: The identifier octet that must be present.
-
-    Returns:
-        A view of the content.
-
-    Raises:
-        Error: If the encoding is malformed or the tag differs.
-    """
+    """Reads the next TLV and checks its tag."""
     var v = der_next(r)
     if v.tag != tag:
         raise Error(t"DER: expected tag {tag}, found {v.tag}")
@@ -110,12 +73,7 @@ def der_expect[
 
 
 def der_put_length(mut out: List[UInt8], length: Int):
-    """Appends a DER length.
-
-    Args:
-        out: The buffer to append to.
-        length: The content length, below 2^24.
-    """
+    """Appends a DER length."""
     if length < 0x80:
         out.append(UInt8(length))
     elif length < 0x100:
@@ -133,13 +91,7 @@ def der_put_length(mut out: List[UInt8], length: Int):
 
 
 def der_put(mut out: List[UInt8], tag: UInt8, content: Span[UInt8, _]):
-    """Appends one TLV.
-
-    Args:
-        out: The buffer to append to.
-        tag: The identifier octet.
-        content: The content octets.
-    """
+    """Appends one TLV."""
     out.append(tag)
     der_put_length(out, len(content))
     put_bytes(out, content)
@@ -150,10 +102,6 @@ def der_put_unsigned(mut out: List[UInt8], value: Span[UInt8, _]):
 
     Leading zero bytes are stripped and a zero byte is added when the top bit
     is set, as DER requires.
-
-    Args:
-        out: The buffer to append to.
-        value: The magnitude, big-endian, possibly with leading zeros.
     """
     var start = 0
     while start < len(value) - 1 and value[start] == 0:

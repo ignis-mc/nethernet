@@ -155,10 +155,6 @@ struct Association(Movable):
         """Creates a closed association.
 
         It answers a peer's INIT on its own; call `connect()` to send one.
-
-        Args:
-            config: The association parameters, including the caller's
-                random tag, initial TSN and cookie secret.
         """
         self._cfg = config.copy()
         self._state = SCTP_STATE_CLOSED
@@ -199,19 +195,11 @@ struct Association(Movable):
     # ----------------------------------------------------------------- API
 
     def state(self) -> Int:
-        """Returns the association state.
-
-        Returns:
-            One of the `SCTP_STATE_*` values.
-        """
+        """Returns the association state."""
         return self._state
 
     def stats(self) -> SctpStats:
-        """Returns a snapshot of the counters.
-
-        Returns:
-            The packet, chunk and retransmission counters so far.
-        """
+        """Returns a snapshot of the counters."""
         var s = self._stats
         s.retransmits = self._sender.retransmits
         s.fast_retransmits = self._sender.fast_retransmits
@@ -224,35 +212,19 @@ struct Association(Movable):
         return s
 
     def buffered_amount(self) -> Int:
-        """Counts user bytes queued or in flight and not yet acknowledged.
-
-        Returns:
-            The byte count.
-        """
+        """Counts user bytes queued or in flight and not yet acknowledged."""
         return self._sender.buffered_amount()
 
     def congestion_window(self) -> Int:
-        """Returns the congestion window.
-
-        Returns:
-            The window in bytes.
-        """
+        """Returns the congestion window."""
         return self._sender.cwnd()
 
     def rto_ms(self) -> Int:
-        """Returns the current retransmission timeout.
-
-        Returns:
-            The timeout in milliseconds.
-        """
+        """Returns the current retransmission timeout."""
         return self._sender.rto.rto()
 
     def receive_buffered(self) -> Int:
-        """Returns the receive buffer space in use.
-
-        Returns:
-            Bytes held for reassembly, ordering or in unread events.
-        """
+        """Returns the receive buffer space in use."""
         return self._receiver.buffered() + self._event_bytes
 
     def connect(mut self, now_ms: Int):
@@ -260,9 +232,6 @@ struct Association(Movable):
 
         Safe to call when the peer does the same (simultaneous open). Does
         nothing unless the association is closed and unused.
-
-        Args:
-            now_ms: The current time in milliseconds.
         """
         if self._ended or self._state != SCTP_STATE_CLOSED:
             return
@@ -285,20 +254,6 @@ struct Association(Movable):
         Fragments get consecutive TSNs and are never interleaved with
         another message. Messages queued while connecting are sent once
         the association is established.
-
-        Args:
-            stream_id: The outbound stream.
-            ppid: The payload protocol identifier.
-            payload: The user data.
-            unordered: Whether to deliver without ordering.
-            max_retransmits: How many retransmissions to allow before the
-                message is abandoned (RFC 3758, RFC 8831); 0 sends once,
-                negative means fully reliable.
-
-        Raises:
-            Error: If the association is neither connecting nor
-                established, the payload is empty or larger than
-                `max_message_size`, or the stream does not exist.
         """
         if self._ended or not (
             self._state == SCTP_STATE_ESTABLISHED
@@ -323,9 +278,6 @@ struct Association(Movable):
         An Outgoing SSN Reset Request goes out once every message queued
         on the stream so far has been sent, and is retransmitted until the
         peer answers. Does nothing unless the association is established.
-
-        Args:
-            stream_id: The outbound stream to reset.
         """
         if self._ended or self._state != SCTP_STATE_ESTABLISHED:
             return
@@ -336,9 +288,6 @@ struct Association(Movable):
 
         Queued data is still delivered; the SHUTDOWN goes out once all of
         it is acknowledged. While still connecting this closes at once.
-
-        Args:
-            now_ms: The current time in milliseconds.
         """
         if self._ended:
             return
@@ -359,9 +308,6 @@ struct Association(Movable):
 
         Queues an ABORT with a User-Initiated Abort cause if the peer is
         known, and emits `SCTP_EVENT_CLOSED`.
-
-        Args:
-            reason: Text for the peer and for the closed event.
         """
         if self._ended:
             return
@@ -369,12 +315,7 @@ struct Association(Movable):
         self._close(String(reason))
 
     def next_timeout(self) -> Optional[Int]:
-        """Returns when `handle_timeout()` next has work to do.
-
-        Returns:
-            The earliest timer deadline in absolute milliseconds, or
-            `None` if no timer is running.
-        """
+        """Returns when `handle_timeout()` next has work to do."""
         var best: Optional[Int] = None
         if self._ended:
             return best
@@ -390,11 +331,7 @@ struct Association(Movable):
         return best
 
     def handle_timeout(mut self, now_ms: Int):
-        """Runs every timer whose deadline has passed.
-
-        Args:
-            now_ms: The current time in milliseconds.
-        """
+        """Runs every timer whose deadline has passed."""
         if self._ended:
             return
         if self._t1.expired(now_ms):
@@ -425,11 +362,7 @@ struct Association(Movable):
                 self._reset.timer.start(now_ms + self._sender.rto.rto())
 
     def poll_event(mut self) -> Optional[SctpEvent]:
-        """Takes the next queued event.
-
-        Returns:
-            The oldest unread event, or `None`.
-        """
+        """Takes the next queued event."""
         if len(self._events) == 0:
             return None
         try:
@@ -447,12 +380,6 @@ struct Association(Movable):
         Call until it returns `None`. A SACK that is due goes first in the
         packet, followed by other control chunks and as much DATA as the
         MTU and the send windows allow.
-
-        Args:
-            now_ms: The current time in milliseconds.
-
-        Returns:
-            One complete SCTP packet of at most `mtu` bytes, or `None`.
         """
         try:
             return self._poll_transmit(now_ms)
@@ -464,10 +391,6 @@ struct Association(Movable):
 
         Never raises: packets that are malformed, fail the checksum or
         carry the wrong ports or verification tag are dropped and counted.
-
-        Args:
-            packet: The decrypted datagram.
-            now_ms: The current time in milliseconds.
         """
         self._stats.packets_in += 1
         self._stats.bytes_in += len(packet)

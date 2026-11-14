@@ -106,11 +106,7 @@ struct ServerData(Copyable):
         self.connection_type = CONNECTION_TYPE_LAN_SIGNALING
 
     def encode(self) -> List[UInt8]:
-        """Encodes the description.
-
-        Returns:
-            The bytes carried (hex-encoded) by a response packet.
-        """
+        """Encodes the description."""
         var out = List[UInt8]()
         out.append(SERVER_DATA_VERSION)
         _put_string(out, self.server_name)
@@ -130,18 +126,7 @@ struct ServerData(Copyable):
 
     @staticmethod
     def decode(data: Span[UInt8, _]) raises -> ServerData:
-        """Decodes a version 7 description.
-
-        Args:
-            data: The bytes from a response packet.
-
-        Returns:
-            The decoded description.
-
-        Raises:
-            Error: If the version is not 7, the data is truncated, or bytes
-                are left over.
-        """
+        """Decodes a version 7 description."""
         var r = Reader(data)
         var version = r.u8()
         if version != SERVER_DATA_VERSION:

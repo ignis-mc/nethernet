@@ -123,18 +123,7 @@ def _put_ecdsa_sha256_algorithm(mut out: List[UInt8]):
 def encode_ec_public_key_info(
     algorithm: Int, point: Span[UInt8, _]
 ) raises -> List[UInt8]:
-    """Encodes an elliptic-curve key as a PKIX SubjectPublicKeyInfo.
-
-    Args:
-        algorithm: `KEY_ALGORITHM_EC_P256` or `KEY_ALGORITHM_EC_P384`.
-        point: The uncompressed SEC1 point.
-
-    Returns:
-        The DER encoding.
-
-    Raises:
-        Error: If the algorithm is not an elliptic-curve one.
-    """
+    """Encodes an elliptic-curve key as a PKIX SubjectPublicKeyInfo."""
     var curve: List[UInt8]
     if algorithm == KEY_ALGORITHM_EC_P256:
         curve = _oid_prime256v1()
@@ -179,17 +168,7 @@ def _parse_spki_body(body: Span[UInt8, _]) raises -> PublicKeyInfo:
 
 
 def parse_public_key_info(der: Span[UInt8, _]) raises -> PublicKeyInfo:
-    """Decodes a PKIX SubjectPublicKeyInfo.
-
-    Args:
-        der: The DER encoding.
-
-    Returns:
-        The algorithm and key bytes.
-
-    Raises:
-        Error: If the structure is malformed.
-    """
+    """Decodes a PKIX SubjectPublicKeyInfo."""
     var r = Reader(der)
     return _parse_spki_body(der_expect(r, DER_SEQUENCE))
 
@@ -199,15 +178,6 @@ def certificate_public_key(cert_der: Span[UInt8, _]) raises -> PublicKeyInfo:
 
     Nothing else about the certificate is validated: WebRTC trusts the
     certificate by its fingerprint.
-
-    Args:
-        cert_der: The DER-encoded certificate.
-
-    Returns:
-        The algorithm and key bytes.
-
-    Raises:
-        Error: If the certificate structure is malformed.
     """
     var r = Reader(cert_der)
     var cert = Reader(der_expect(r, DER_SEQUENCE))
@@ -231,21 +201,7 @@ def self_signed_certificate(
     not_after_unix_s: Int,
     common_name: StringSpan,
 ) raises -> List[UInt8]:
-    """Creates a self-signed ECDSA P-256 certificate with SHA-256.
-
-    Args:
-        private_key: The 32-byte P-256 private scalar.
-        serial: Random bytes for the serial number (8 to 16 are typical).
-        not_before_unix_s: The start of validity, in Unix seconds.
-        not_after_unix_s: The end of validity, in Unix seconds.
-        common_name: The subject and issuer common name.
-
-    Returns:
-        The DER-encoded certificate.
-
-    Raises:
-        Error: If the private key is invalid.
-    """
+    """Creates a self-signed ECDSA P-256 certificate with SHA-256."""
     var point = p256_public_key(private_key)
     var tbs = List[UInt8]()
     var version: List[UInt8] = [0x02, 0x01, 0x02]
@@ -286,14 +242,7 @@ def self_signed_certificate(
 
 
 def certificate_fingerprint(cert_der: Span[UInt8, _]) -> String:
-    """Formats the SHA-256 fingerprint of a certificate as SDP expects.
-
-    Args:
-        cert_der: The DER-encoded certificate.
-
-    Returns:
-        Uppercase hex bytes separated by colons, for example `AB:CD:…`.
-    """
+    """Formats the SHA-256 fingerprint of a certificate as SDP expects."""
     var digest = sha256(cert_der)
     var digits = "0123456789ABCDEF".as_bytes()
     var out = List[UInt8]()

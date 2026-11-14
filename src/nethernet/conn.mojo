@@ -176,16 +176,6 @@ struct Conn(Movable):
         """Creates a connection and binds its socket.
 
         Generates the ICE credentials and a fresh self-signed certificate.
-
-        Args:
-            offerer: `True` for the dialing side, which sends the offer, is
-                ICE controlling and opens the data channels.
-            connection_id: The identifier carried in every signal.
-            config: The connection settings.
-
-        Raises:
-            Error: If the socket cannot be bound or the kernel cannot supply
-                randomness.
         """
         # Everything that can raise happens before the first field is
         # assigned, so a failure never leaves a half-built connection.
@@ -274,13 +264,6 @@ struct Conn(Movable):
 
         For the answering side, call this after `set_remote_description()`,
         which decides the DTLS role.
-
-        Args:
-            include_candidates: Whether to embed the local candidate, which
-                signaling channels without trickle ICE require.
-
-        Returns:
-            The local description.
         """
         var d = self._local.copy()
         if include_candidates:
@@ -290,53 +273,27 @@ struct Conn(Movable):
         return d^
 
     def local_fingerprint(self) -> String:
-        """Gets the SHA-256 fingerprint of the local DTLS certificate.
-
-        Returns:
-            Uppercase colon-separated hex, as written in `a=fingerprint`.
-        """
+        """Gets the SHA-256 fingerprint of the local DTLS certificate."""
         return self._local.fingerprint.copy()
 
     def set_local_identity(mut self, value: StringSpan):
-        """Attaches an identity assertion to the local description.
-
-        Args:
-            value: The base64 text for `a=identity`, from `Identity.sign()`
-                over `local_fingerprint()`.
-        """
+        """Attaches an identity assertion to the local description."""
         self._local.identity = String(value)
 
     def peer_public_key(self) -> List[UInt8]:
-        """Gets the identity key the peer proved possession of.
-
-        Returns:
-            The uncompressed P-384 point, or an empty list if the peer was
-            anonymous or its identity was not checked.
-        """
+        """Gets the identity key the peer proved possession of."""
         return self._peer_public_key.copy()
 
     def set_peer_public_key(mut self, key: Span[UInt8, _]):
-        """Records the peer's verified identity key.
-
-        Args:
-            key: The uncompressed P-384 point.
-        """
+        """Records the peer's verified identity key."""
         self._peer_public_key = List[UInt8](key)
 
     def local_candidate(self) -> IceCandidate:
-        """Gets the host candidate for this connection's socket.
-
-        Returns:
-            The single local candidate.
-        """
+        """Gets the host candidate for this connection's socket."""
         return IceCandidate.host(self._local_addr)
 
     def local_candidate_signal(self) -> String:
-        """Formats the local candidate as `CANDIDATEADD` signal data.
-
-        Returns:
-            The candidate line with its `candidate:` prefix.
-        """
+        """Formats the local candidate as `CANDIDATEADD` signal data."""
         return self.local_candidate().signal_value(self._local.ice_ufrag, 0)
 
     def set_remote_description(mut self, remote: Description) raises:
@@ -345,13 +302,6 @@ struct Conn(Movable):
         The offerer becomes the DTLS server unless the answer says `passive`.
         The answerer takes the client role (`a=setup:active`) unless the
         offer says `active`.
-
-        Args:
-            remote: The parsed description from the offer or the answer.
-
-        Raises:
-            Error: If the fingerprint is not SHA-256, a description was
-                already applied, or the kernel cannot supply randomness.
         """
         if self._have_remote:
             raise Error("remote description already set")
@@ -387,9 +337,6 @@ struct Conn(Movable):
 
         Candidates this library cannot use (TCP, IPv6, mDNS names) and
         malformed lines are ignored.
-
-        Args:
-            text: The candidate line, with or without a `candidate:` prefix.
         """
         try:
             var cand = parse_candidate(text)
@@ -402,119 +349,63 @@ struct Conn(Movable):
     # ===------------------------------------------------------------------=== #
 
     def state(self) -> Int:
-        """Gets the connection state.
-
-        Returns:
-            One of the `CONN_STATE_*` constants.
-        """
+        """Gets the connection state."""
         return self._state
 
     def is_open(self) -> Bool:
-        """Checks whether messages can be sent and received.
-
-        Returns:
-            `True` in the `CONN_STATE_OPEN` state.
-        """
+        """Checks whether messages can be sent and received."""
         return self._state == CONN_STATE_OPEN
 
     def is_closed(self) -> Bool:
-        """Checks whether the connection has ended.
-
-        Returns:
-            `True` in the `CONN_STATE_CLOSED` state.
-        """
+        """Checks whether the connection has ended."""
         return self._state == CONN_STATE_CLOSED
 
     def close_reason(self) -> String:
-        """Describes why the connection closed.
-
-        Returns:
-            A short reason, empty while the connection is not closed.
-        """
+        """Describes why the connection closed."""
         return self._close_reason.copy()
 
     def connection_id(self) -> UInt64:
-        """Gets the connection identifier used in signals.
-
-        Returns:
-            The identifier chosen by the dialing side.
-        """
+        """Gets the connection identifier used in signals."""
         return self._connection_id
 
     def remote_network_id(self) -> String:
-        """Gets the network ID of the peer.
-
-        Returns:
-            The peer's network ID as given to the dialer or the listener.
-        """
+        """Gets the network ID of the peer."""
         return self._remote_network_id.copy()
 
     def set_remote_network_id(mut self, network_id: StringSpan):
-        """Records the network ID of the peer.
-
-        Args:
-            network_id: The peer's network ID.
-        """
+        """Records the network ID of the peer."""
         self._remote_network_id = String(network_id)
 
     def local_addr(self) -> SocketAddr:
-        """Gets the local socket address.
-
-        Returns:
-            The bound address, which is also the advertised candidate.
-        """
+        """Gets the local socket address."""
         return self._local_addr
 
     def remote_addr(self) -> Optional[SocketAddr]:
-        """Gets the peer address ICE selected.
-
-        Returns:
-            The remote address, or `None` before ICE completes.
-        """
+        """Gets the peer address ICE selected."""
         return self._ice.selected()
 
     def latency_ms(self) -> Int:
-        """Estimates the one-way latency from ICE round-trip times.
-
-        Returns:
-            Half the latest round-trip time, or -1 if not yet measured.
-        """
+        """Estimates the one-way latency from ICE round-trip times."""
         var rtt = self._ice.rtt_ms()
         if rtt < 0:
             return -1
         return rtt // 2
 
     def sctp_stats(self) -> SctpStats:
-        """Gets the SCTP association's traffic and recovery counters.
-
-        Returns:
-            The counters, all zero until the association starts.
-        """
+        """Gets the SCTP association's traffic and recovery counters."""
         return self._sctp[].stats()
 
     def fd(self) -> Int:
-        """Gets the socket descriptor, for waiting with a `PollSet`.
-
-        Returns:
-            The file descriptor.
-        """
+        """Gets the socket descriptor, for waiting with a `PollSet`."""
         return self._socket.fd()
 
     def buffered_amount(self) -> Int:
         """Counts bytes queued for sending that the peer has not acknowledged.
-
-        Returns:
-            The number of payload bytes still buffered in SCTP.
         """
         return self._sctp[].buffered_amount()
 
     def next_timeout(self) -> Int:
-        """Computes when `poll()` next has timer work to do.
-
-        Returns:
-            An absolute monotonic time in milliseconds; a very large value if
-            no timer is pending.
-        """
+        """Computes when `poll()` next has timer work to do."""
         if self._state == CONN_STATE_CLOSED:
             return _NEVER
         var t = min(self._ice.next_timeout(), self._dtls[].next_timeout())
@@ -532,12 +423,6 @@ struct Conn(Movable):
 
         Reads pending datagrams, advances ICE, DTLS and SCTP, and sends what
         they produce.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
-
-        Raises:
-            Error: If the socket fails.
         """
         if self._state == CONN_STATE_CLOSED:
             return
@@ -551,14 +436,7 @@ struct Conn(Movable):
         self._flush(now_ms)
 
     def drive(mut self, timeout_ms: Int) raises:
-        """Waits for socket activity or a timer, then calls `poll()`.
-
-        Args:
-            timeout_ms: The longest time to wait.
-
-        Raises:
-            Error: If the socket fails.
-        """
+        """Waits for socket activity or a timer, then calls `poll()`."""
         var now = monotonic_ms()
         var wait = max(0, min(timeout_ms, self.next_timeout() - now))
         var set = PollSet()
@@ -769,11 +647,7 @@ struct Conn(Movable):
             self._state = CONN_STATE_OPEN
 
     def max_segment_size(self) -> Int:
-        """Gets the largest payload one data-channel message can carry.
-
-        Returns:
-            The peer's `max-message-size` minus the segment-count byte.
-        """
+        """Gets the largest payload one data-channel message can carry."""
         return self._remote_max_message_size - 1
 
     def send(
@@ -783,15 +657,6 @@ struct Conn(Movable):
 
         Nothing is transmitted until the next `poll()`. An empty message is
         not sent at all, because the peer treats it as a protocol error.
-
-        Args:
-            data: The message payload.
-            reliability: `RELIABLE` or `UNRELIABLE`.
-
-        Raises:
-            Error: If the connection is not open, the message needs more
-                than `MAX_SEGMENTS` segments, or an unreliable message does
-                not fit in one segment.
         """
         if self._state != CONN_STATE_OPEN:
             raise Error("connection is not open")
@@ -831,14 +696,7 @@ struct Conn(Movable):
             offset += n
 
     def receive(mut self, reliability: Int = RELIABLE) -> Optional[List[UInt8]]:
-        """Takes the next complete message without blocking.
-
-        Args:
-            reliability: Which channel to read: `RELIABLE` or `UNRELIABLE`.
-
-        Returns:
-            A whole message, or `None` if none has arrived.
-        """
+        """Takes the next complete message without blocking."""
         if reliability == UNRELIABLE:
             if len(self._inbox_unreliable) == 0:
                 return None
@@ -852,17 +710,7 @@ struct Conn(Movable):
         return message^
 
     def read(mut self, timeout_ms: Int) raises -> List[UInt8]:
-        """Waits for the next message on the reliable channel.
-
-        Args:
-            timeout_ms: The longest time to wait; negative waits forever.
-
-        Returns:
-            A whole message.
-
-        Raises:
-            Error: If the connection closes or the timeout passes first.
-        """
+        """Waits for the next message on the reliable channel."""
         var deadline = _NEVER
         if timeout_ms >= 0:
             deadline = monotonic_ms() + timeout_ms
@@ -880,29 +728,12 @@ struct Conn(Movable):
             self.drive(min(deadline - now, 1000))
 
     def write(mut self, data: Span[UInt8, _]) raises:
-        """Sends a message on the reliable channel and transmits it now.
-
-        Args:
-            data: The message payload.
-
-        Raises:
-            Error: If the connection is not open or the message is too large.
-        """
+        """Sends a message on the reliable channel and transmits it now."""
         self.send(data, RELIABLE)
         self.poll(monotonic_ms())
 
     def flush(mut self, timeout_ms: Int) raises -> Bool:
-        """Drives the connection until the peer acknowledged all sent data.
-
-        Args:
-            timeout_ms: The longest time to wait.
-
-        Returns:
-            `True` if nothing is left buffered, `False` on timeout or close.
-
-        Raises:
-            Error: If the socket fails.
-        """
+        """Drives the connection until the peer acknowledged all sent data."""
         var deadline = monotonic_ms() + timeout_ms
         while True:
             self.poll(monotonic_ms())
@@ -924,9 +755,6 @@ struct Conn(Movable):
 
         Waits up to `linger_ms` for buffered data to be acknowledged, then
         aborts SCTP and sends a DTLS `close_notify`.
-
-        Args:
-            linger_ms: The longest time to wait for unacknowledged data.
         """
         if self._state == CONN_STATE_CLOSED:
             return

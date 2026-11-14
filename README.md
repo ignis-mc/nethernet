@@ -139,7 +139,7 @@ exact compiler version).
 ```sh
 pixi run test          # every unit test file
 pixi run format        # mojo format, 80 columns
-pixi run lint-docs     # every public symbol needs a docstring
+pixi run lint-docs     # the API docs build
 pixi run build         # precompile the package
 pixi run smoke         # import the precompiled package from a consumer
 pixi run check         # format-check + lint-docs + smoke + test

@@ -12,18 +12,7 @@ struct SocketAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def v4(a: UInt8, b: UInt8, c: UInt8, d: UInt8, port: UInt16) -> Self:
-        """Builds an address from four octets and a port.
-
-        Args:
-            a: The first octet.
-            b: The second octet.
-            c: The third octet.
-            d: The fourth octet.
-            port: The port number.
-
-        Returns:
-            The address `a.b.c.d:port`.
-        """
+        """Builds an address from four octets and a port."""
         return Self(
             (UInt32(a) << 24)
             | (UInt32(b) << 16)
@@ -34,17 +23,7 @@ struct SocketAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def parse_ip(text: StringSpan) raises -> UInt32:
-        """Parses a dotted-quad IPv4 address.
-
-        Args:
-            text: The address, for example `192.168.1.10`.
-
-        Returns:
-            The address with the first octet in the top byte.
-
-        Raises:
-            Error: If `text` is not four decimal octets separated by dots.
-        """
+        """Parses a dotted-quad IPv4 address."""
         var bytes = text.as_bytes()
         var ip = UInt32(0)
         var octet = 0
@@ -71,17 +50,7 @@ struct SocketAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def parse(text: StringSpan) raises -> Self:
-        """Parses `a.b.c.d:port`.
-
-        Args:
-            text: The address and port separated by a colon.
-
-        Returns:
-            The parsed address.
-
-        Raises:
-            Error: If the address or port is malformed.
-        """
+        """Parses `a.b.c.d:port`."""
         var bytes = text.as_bytes()
         var colon = -1
         for i in range(len(bytes)):
@@ -103,27 +72,15 @@ struct SocketAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
         return Self(ip, UInt16(port))
 
     def ip_string(self) -> String:
-        """Formats the address part as a dotted quad.
-
-        Returns:
-            The address, for example `192.168.1.10`.
-        """
+        """Formats the address part as a dotted quad."""
         return String(
             t"{self.ip >> 24}.{(self.ip >> 16) & 0xFF}.{(self.ip >> 8) & 0xFF}.{self.ip & 0xFF}"
         )
 
     def is_loopback(self) -> Bool:
-        """Checks whether the address is in `127.0.0.0/8`.
-
-        Returns:
-            `True` for loopback addresses.
-        """
+        """Checks whether the address is in `127.0.0.0/8`."""
         return (self.ip >> 24) == 127
 
     def write_to(self, mut writer: Some[Writer]):
-        """Writes the address as `a.b.c.d:port`.
-
-        Args:
-            writer: The destination.
-        """
+        """Writes the address as `a.b.c.d:port`."""
         writer.write(self.ip_string(), ":", self.port)

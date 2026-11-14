@@ -37,13 +37,7 @@ struct TsnTracker(Movable):
     var _count: Int
 
     def __init__(out self, cumulative_tsn: UInt32, window: Int):
-        """Creates a tracker with nothing received above `cumulative_tsn`.
-
-        Args:
-            cumulative_tsn: The peer's initial TSN minus one.
-            window: How many TSNs past the cumulative TSN can be tracked;
-                rounded up to a power of two between 64 and 32768.
-        """
+        """Creates a tracker with nothing received above `cumulative_tsn`."""
         var size = 64
         while size < window and size < 32768:
             size *= 2
@@ -54,30 +48,15 @@ struct TsnTracker(Movable):
         self._count = 0
 
     def cumulative_tsn(self) -> UInt32:
-        """Returns the highest TSN received with no gap before it.
-
-        Returns:
-            The cumulative TSN.
-        """
+        """Returns the highest TSN received with no gap before it."""
         return self._cum
 
     def has_gaps(self) -> Bool:
-        """Checks whether any TSN above the cumulative TSN was received.
-
-        Returns:
-            `True` if a SACK would carry gap ack blocks.
-        """
+        """Checks whether any TSN above the cumulative TSN was received."""
         return self._count > 0
 
     def classify(self, tsn: UInt32) -> Int:
-        """Decides what to do with an arriving TSN.
-
-        Args:
-            tsn: The TSN of a DATA chunk.
-
-        Returns:
-            `TSN_NEW`, `TSN_DUPLICATE` or `TSN_OUT_OF_WINDOW`.
-        """
+        """Decides what to do with an arriving TSN."""
         if tsn_le(tsn, self._cum):
             return TSN_DUPLICATE
         if tsn - self._cum > self._mask:
@@ -87,11 +66,7 @@ struct TsnTracker(Movable):
         return TSN_NEW
 
     def mark(mut self, tsn: UInt32):
-        """Records a TSN that `classify()` reported as new.
-
-        Args:
-            tsn: The TSN to record.
-        """
+        """Records a TSN that `classify()` reported as new."""
         if self.classify(tsn) != TSN_NEW:
             return
         if tsn == self._cum + 1:
@@ -107,9 +82,6 @@ struct TsnTracker(Movable):
         """Moves the cumulative TSN forward, as FORWARD-TSN asks.
 
         Does nothing if the new value is not ahead of the current one.
-
-        Args:
-            new_cumulative_tsn: The TSN to skip to.
         """
         if tsn_le(new_cumulative_tsn, self._cum):
             return
@@ -142,14 +114,7 @@ struct TsnTracker(Movable):
             self._highest = self._cum
 
     def gap_blocks(self, max_blocks: Int) -> List[GapBlock]:
-        """Lists the received runs above the cumulative TSN.
-
-        Args:
-            max_blocks: The largest number of blocks to return.
-
-        Returns:
-            Gap ack blocks in ascending order, lowest runs first.
-        """
+        """Lists the received runs above the cumulative TSN."""
         var blocks = List[GapBlock]()
         if self._count == 0:
             return blocks^
@@ -197,14 +162,7 @@ struct SctpMessage(Copyable):
         unordered: Bool,
         var payload: List[UInt8],
     ):
-        """Creates a message.
-
-        Args:
-            stream_id: The stream the message arrived on.
-            ppid: The payload protocol identifier.
-            unordered: Whether the message was sent unordered.
-            payload: The user data.
-        """
+        """Creates a message."""
         self.stream_id = stream_id
         self.ppid = ppid
         self.unordered = unordered
@@ -234,11 +192,7 @@ struct Reassembly(Movable):
     var _max_message_size: Int
 
     def __init__(out self, max_message_size: Int):
-        """Creates an empty reassembly buffer.
-
-        Args:
-            max_message_size: The largest message to reassemble, in bytes.
-        """
+        """Creates an empty reassembly buffer."""
         self._chunks = Dict[UInt32, DataChunk]()
         self._run_end = Dict[UInt32, UInt32]()
         self._run_start = Dict[UInt32, UInt32]()
@@ -249,19 +203,11 @@ struct Reassembly(Movable):
         self._max_message_size = max_message_size
 
     def cost(self) -> Int:
-        """Returns the buffer space taken by stored fragments.
-
-        Returns:
-            Payload bytes plus `CHUNK_BUFFER_OVERHEAD` per fragment.
-        """
+        """Returns the buffer space taken by stored fragments."""
         return self._cost
 
     def fragment_count(self) -> Int:
-        """Counts the stored fragments.
-
-        Returns:
-            The number of DATA chunks held.
-        """
+        """Counts the stored fragments."""
         return len(self._chunks)
 
     def _joins(self, left: DataChunk, right: DataChunk) -> Bool:
@@ -331,21 +277,7 @@ struct Reassembly(Movable):
         cumulative_tsn: UInt32,
         mut out: List[SctpMessage],
     ) raises -> Int:
-        """Adds a new DATA chunk and collects any messages it completes.
-
-        Args:
-            chunk: A chunk whose TSN was not received before.
-            cumulative_tsn: The cumulative TSN after recording the chunk.
-            out: The list that deliverable messages are appended to.
-
-        Returns:
-            `REASSEMBLY_OK`, `REASSEMBLY_DISCARDED` when the chunk belongs
-            to a message that was skipped or already delivered, or
-            `REASSEMBLY_TOO_LARGE` when a message exceeds the size limit.
-
-        Raises:
-            Error: If the internal bookkeeping is inconsistent.
-        """
+        """Adds a new DATA chunk and collects any messages it completes."""
         var tsn = chunk.tsn
         var stream_id = chunk.stream_id
         var size = len(chunk.payload)
@@ -452,16 +384,6 @@ struct Reassembly(Movable):
         are dropped. For every listed ordered stream, complete messages up
         to the skipped sequence number are delivered and the stream moves
         past it.
-
-        Args:
-            new_cumulative_tsn: The value carried by the FORWARD-TSN.
-            cumulative_tsn: The cumulative TSN after applying it.
-            stream_ids: The ordered streams that had messages skipped.
-            ssns: For each stream, the largest skipped sequence number.
-            out: The list that deliverable messages are appended to.
-
-        Raises:
-            Error: If the internal bookkeeping is inconsistent.
         """
         var doomed = List[UInt32]()
         for entry in self._run_end.items():
@@ -513,12 +435,6 @@ struct Reassembly(Movable):
 
         Ordered data still held for the stream is dropped: after a reset it
         can no longer be delivered in order.
-
-        Args:
-            stream_id: The inbound stream the peer reset.
-
-        Raises:
-            Error: If the internal bookkeeping is inconsistent.
         """
         var doomed = List[UInt32]()
         for entry in self._run_end.items():

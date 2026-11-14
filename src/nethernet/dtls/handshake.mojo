@@ -81,16 +81,7 @@ def put_handshake_header(
     fragment_offset: Int,
     fragment_length: Int,
 ):
-    """Appends a DTLS handshake header.
-
-    Args:
-        out: The buffer to append to.
-        msg_type: The handshake message type.
-        length: The length of the whole message body.
-        message_seq: The message sequence number.
-        fragment_offset: The offset of this fragment within the body.
-        fragment_length: The length of this fragment.
-    """
+    """Appends a DTLS handshake header."""
     put_u8(out, msg_type)
     put_u24(out, UInt32(length))
     put_u16(out, message_seq)
@@ -145,11 +136,7 @@ struct ClientHello(Copyable):
         self.ec_point_formats = False
 
     def encode(self, mut out: List[UInt8]):
-        """Appends the encoded body.
-
-        Args:
-            out: The buffer to append to.
-        """
+        """Appends the encoded body."""
         put_u16(out, self.version)
         put_bytes(out, Span(self.random))
         put_u8(out, UInt8(len(self.session_id)))
@@ -197,17 +184,7 @@ struct ClientHello(Copyable):
 
     @staticmethod
     def decode(body: Span[UInt8, _]) raises -> ClientHello:
-        """Decodes a ClientHello body.
-
-        Args:
-            body: The message body without the handshake header.
-
-        Returns:
-            The decoded message.
-
-        Raises:
-            Error: If the body is malformed.
-        """
+        """Decodes a ClientHello body."""
         var r = Reader(body)
         var ch = ClientHello()
         ch.version = r.u16()
@@ -280,11 +257,7 @@ struct ServerHello(Copyable):
         self.ec_point_formats = False
 
     def encode(self, mut out: List[UInt8]):
-        """Appends the encoded body.
-
-        Args:
-            out: The buffer to append to.
-        """
+        """Appends the encoded body."""
         put_u16(out, self.version)
         put_bytes(out, Span(self.random))
         put_u8(out, UInt8(len(self.session_id)))
@@ -313,17 +286,7 @@ struct ServerHello(Copyable):
 
     @staticmethod
     def decode(body: Span[UInt8, _]) raises -> ServerHello:
-        """Decodes a ServerHello body.
-
-        Args:
-            body: The message body without the handshake header.
-
-        Returns:
-            The decoded message.
-
-        Raises:
-            Error: If the body is malformed.
-        """
+        """Decodes a ServerHello body."""
         var r = Reader(body)
         var sh = ServerHello()
         sh.version = r.u16()
@@ -352,41 +315,21 @@ struct ServerHello(Copyable):
 
 
 def encode_hello_verify_request(mut out: List[UInt8], cookie: Span[UInt8, _]):
-    """Appends a HelloVerifyRequest body.
-
-    Args:
-        out: The buffer to append to.
-        cookie: The cookie the client must echo, at most 255 bytes.
-    """
+    """Appends a HelloVerifyRequest body."""
     put_u16(out, DTLS_VERSION_1_2)
     put_u8(out, UInt8(len(cookie)))
     put_bytes(out, cookie)
 
 
 def decode_hello_verify_request(body: Span[UInt8, _]) raises -> List[UInt8]:
-    """Decodes a HelloVerifyRequest body.
-
-    Args:
-        body: The message body without the handshake header.
-
-    Returns:
-        The cookie to echo in the next ClientHello.
-
-    Raises:
-        Error: If the body is malformed.
-    """
+    """Decodes a HelloVerifyRequest body."""
     var r = Reader(body)
     r.skip(2)
     return List[UInt8](r.bytes(Int(r.u8())))
 
 
 def encode_certificate(mut out: List[UInt8], cert_der: Span[UInt8, _]):
-    """Appends a Certificate body holding one certificate.
-
-    Args:
-        out: The buffer to append to.
-        cert_der: The DER-encoded certificate; empty encodes an empty list.
-    """
+    """Appends a Certificate body holding one certificate."""
     if len(cert_der) == 0:
         put_u24(out, 0)
         return
@@ -396,18 +339,7 @@ def encode_certificate(mut out: List[UInt8], cert_der: Span[UInt8, _]):
 
 
 def decode_certificate(body: Span[UInt8, _]) raises -> List[UInt8]:
-    """Decodes a Certificate body and returns the end-entity certificate.
-
-    Args:
-        body: The message body without the handshake header.
-
-    Returns:
-        The first certificate in DER form, or an empty list if the peer sent
-        no certificate.
-
-    Raises:
-        Error: If the body is malformed.
-    """
+    """Decodes a Certificate body and returns the end-entity certificate."""
     var r = Reader(body)
     var list = Reader(r.bytes(Int(r.u24())))
     if list.at_end():
@@ -435,22 +367,14 @@ struct ServerKeyExchange(Copyable):
         self.signature = List[UInt8]()
 
     def encode_params(self, mut out: List[UInt8]):
-        """Appends the signed `ServerECDHParams` portion.
-
-        Args:
-            out: The buffer to append to.
-        """
+        """Appends the signed `ServerECDHParams` portion."""
         put_u8(out, 3)
         put_u16(out, self.named_curve)
         put_u8(out, UInt8(len(self.public_key)))
         put_bytes(out, Span(self.public_key))
 
     def encode(self, mut out: List[UInt8]):
-        """Appends the encoded body.
-
-        Args:
-            out: The buffer to append to.
-        """
+        """Appends the encoded body."""
         self.encode_params(out)
         put_u16(out, self.signature_algorithm)
         put_u16(out, UInt16(len(self.signature)))
@@ -458,17 +382,7 @@ struct ServerKeyExchange(Copyable):
 
     @staticmethod
     def decode(body: Span[UInt8, _]) raises -> ServerKeyExchange:
-        """Decodes an ECDHE ServerKeyExchange body.
-
-        Args:
-            body: The message body without the handshake header.
-
-        Returns:
-            The decoded message.
-
-        Raises:
-            Error: If the body is malformed or not a named-curve exchange.
-        """
+        """Decodes an ECDHE ServerKeyExchange body."""
         var r = Reader(body)
         var ske = ServerKeyExchange()
         if r.u8() != 3:
@@ -484,10 +398,6 @@ def encode_certificate_request(
     mut out: List[UInt8], signature_algorithms: Span[UInt16, _]
 ):
     """Appends a CertificateRequest body asking for an ECDSA or RSA certificate.
-
-    Args:
-        out: The buffer to append to.
-        signature_algorithms: The signature schemes the server can verify.
     """
     put_u8(out, 2)
     put_u8(out, CERT_TYPE_ECDSA_SIGN)
@@ -501,28 +411,13 @@ def encode_certificate_request(
 def encode_client_key_exchange(
     mut out: List[UInt8], public_key: Span[UInt8, _]
 ):
-    """Appends an ECDHE ClientKeyExchange body.
-
-    Args:
-        out: The buffer to append to.
-        public_key: The client's ephemeral public key, uncompressed.
-    """
+    """Appends an ECDHE ClientKeyExchange body."""
     put_u8(out, UInt8(len(public_key)))
     put_bytes(out, public_key)
 
 
 def decode_client_key_exchange(body: Span[UInt8, _]) raises -> List[UInt8]:
-    """Decodes an ECDHE ClientKeyExchange body.
-
-    Args:
-        body: The message body without the handshake header.
-
-    Returns:
-        The client's ephemeral public key.
-
-    Raises:
-        Error: If the body is malformed.
-    """
+    """Decodes an ECDHE ClientKeyExchange body."""
     var r = Reader(body)
     return List[UInt8](r.bytes(Int(r.u8())))
 
@@ -530,13 +425,7 @@ def decode_client_key_exchange(body: Span[UInt8, _]) raises -> List[UInt8]:
 def encode_certificate_verify(
     mut out: List[UInt8], signature_algorithm: UInt16, signature: Span[UInt8, _]
 ):
-    """Appends a CertificateVerify body.
-
-    Args:
-        out: The buffer to append to.
-        signature_algorithm: The signature scheme used.
-        signature: The signature over the handshake transcript.
-    """
+    """Appends a CertificateVerify body."""
     put_u16(out, signature_algorithm)
     put_u16(out, UInt16(len(signature)))
     put_bytes(out, signature)
@@ -557,17 +446,7 @@ struct CertificateVerify(Copyable):
 
     @staticmethod
     def decode(body: Span[UInt8, _]) raises -> CertificateVerify:
-        """Decodes a CertificateVerify body.
-
-        Args:
-            body: The message body without the handshake header.
-
-        Returns:
-            The decoded message.
-
-        Raises:
-            Error: If the body is malformed.
-        """
+        """Decodes a CertificateVerify body."""
         var r = Reader(body)
         var cv = CertificateVerify()
         cv.signature_algorithm = r.u16()

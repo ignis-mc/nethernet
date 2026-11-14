@@ -138,9 +138,9 @@ src/nethernet/
 
 ## Quality bar
 
-- Every public symbol has a docstring in the stdlib format (summary sentence,
-  then `Parameters:`, `Args:`, `Returns:`, `Raises:` as applicable).
-  `pixi run lint-docs` must pass.
+- Docstrings are short: one line saying what the thing is or does, more
+  only when something is genuinely not obvious from the code. Never write
+  `Args:`, `Returns:`, `Raises:` or `Parameters:` sections.
 - `pixi run format` before committing; 80 columns; never hand-format.
 - Naming: `snake_case` functions and variables, `PascalCase` types and type
   parameters, `SCREAMING_SNAKE_CASE` module constants.

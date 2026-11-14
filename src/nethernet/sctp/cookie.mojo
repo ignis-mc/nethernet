@@ -55,15 +55,7 @@ struct CookieData(ImplicitlyCopyable):
 
 
 def encode_cookie(data: CookieData, secret: Span[UInt8, _]) -> List[UInt8]:
-    """Serializes and authenticates a State Cookie.
-
-    Args:
-        data: The association parameters to store.
-        secret: The key for the authentication tag.
-
-    Returns:
-        The `COOKIE_SIZE`-byte cookie.
-    """
+    """Serializes and authenticates a State Cookie."""
     var out = List[UInt8](capacity=COOKIE_SIZE)
     var flags = UInt8(0)
     if data.peer_forward_tsn:
@@ -89,18 +81,7 @@ def encode_cookie(data: CookieData, secret: Span[UInt8, _]) -> List[UInt8]:
 def decode_cookie(
     cookie: Span[UInt8, _], secret: Span[UInt8, _]
 ) raises -> CookieData:
-    """Authenticates and parses a State Cookie.
-
-    Args:
-        cookie: The cookie carried by a COOKIE ECHO.
-        secret: The key the cookie was authenticated with.
-
-    Returns:
-        The stored association parameters.
-
-    Raises:
-        Error: If the size, version or authentication tag is wrong.
-    """
+    """Authenticates and parses a State Cookie."""
     if len(cookie) != COOKIE_SIZE:
         raise Error("sctp: cookie has the wrong size")
     var body = cookie[0:_COOKIE_BODY_SIZE]

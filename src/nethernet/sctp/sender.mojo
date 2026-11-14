@@ -114,14 +114,7 @@ struct _OutChunk(Copyable):
 
 
 def initial_cwnd(mtu: Int) -> Int:
-    """Computes the initial congestion window of RFC 9260 section 7.2.1.
-
-    Args:
-        mtu: The path MTU in bytes.
-
-    Returns:
-        `min(4 * mtu, max(2 * mtu, 4380))`.
-    """
+    """Computes the initial congestion window of RFC 9260 section 7.2.1."""
     var floor = 2 * mtu
     if floor < 4380:
         floor = 4380
@@ -136,12 +129,6 @@ def fragment_size_for_mtu(mtu: Int) -> Int:
     The size leaves room for the common header, the DATA chunk header and a
     SACK without gap blocks, and is a multiple of 4 so that full fragments
     need no padding.
-
-    Args:
-        mtu: The largest packet to emit, in bytes.
-
-    Returns:
-        The fragment size in bytes, at least 4.
     """
     var size = (mtu - SCTP_HEADER_SIZE - DATA_CHUNK_OVERHEAD - 16) & ~3
     if size < 4:
@@ -213,15 +200,7 @@ struct Sender(Movable):
         rto_min_ms: Int,
         rto_max_ms: Int,
     ):
-        """Creates a sender with nothing queued.
-
-        Args:
-            initial_tsn: The first TSN to assign.
-            mtu: The largest packet to emit, in bytes.
-            rto_initial_ms: The timeout before the first RTT measurement.
-            rto_min_ms: The smallest retransmission timeout.
-            rto_max_ms: The largest retransmission timeout.
-        """
+        """Creates a sender with nothing queued."""
         self.rto = RtoEstimator(rto_initial_ms, rto_min_ms, rto_max_ms)
         self.t3 = Timer()
         self.probe = Timer()
@@ -262,78 +241,41 @@ struct Sender(Movable):
         self._probes = 0
 
     def set_peer(mut self, a_rwnd: UInt32, forward_tsn: Bool):
-        """Records what the peer announced in its INIT or INIT ACK.
-
-        Args:
-            a_rwnd: The peer's advertised receiver window credit.
-            forward_tsn: Whether the peer understands FORWARD-TSN.
-        """
+        """Records what the peer announced in its INIT or INIT ACK."""
         self._peer_rwnd = Int(a_rwnd)
         self._ssthresh = Int(a_rwnd)
         self._forward_tsn_ok = forward_tsn
 
     def fragment_size(self) -> Int:
-        """Returns the DATA payload size messages are fragmented at.
-
-        Returns:
-            The fragment size in bytes.
-        """
+        """Returns the DATA payload size messages are fragmented at."""
         return self._fragment_size
 
     def cwnd(self) -> Int:
-        """Returns the congestion window.
-
-        Returns:
-            The window in bytes.
-        """
+        """Returns the congestion window."""
         return self._cwnd
 
     def peer_rwnd(self) -> Int:
-        """Returns the peer's receive window as last advertised.
-
-        Returns:
-            The window in bytes, before subtracting data in flight.
-        """
+        """Returns the peer's receive window as last advertised."""
         return self._peer_rwnd
 
     def next_tsn(self) -> UInt32:
-        """Returns the TSN the next new DATA chunk will get.
-
-        Returns:
-            The next TSN.
-        """
+        """Returns the TSN the next new DATA chunk will get."""
         return self._next_tsn
 
     def cumulative_ack(self) -> UInt32:
-        """Returns the highest TSN the peer acknowledged cumulatively.
-
-        Returns:
-            The cumulative TSN ack point.
-        """
+        """Returns the highest TSN the peer acknowledged cumulatively."""
         return self._cum_ack
 
     def buffered_amount(self) -> Int:
-        """Counts user bytes queued or in flight and not yet acknowledged.
-
-        Returns:
-            The byte count; abandoned data is excluded.
-        """
+        """Counts user bytes queued or in flight and not yet acknowledged."""
         return self._pending_bytes + self._inflight_bytes
 
     def is_drained(self) -> Bool:
-        """Checks whether every queued message was sent and acknowledged.
-
-        Returns:
-            `True` if nothing is queued or awaiting acknowledgement.
-        """
+        """Checks whether every queued message was sent and acknowledged."""
         return len(self._pending) == 0 and len(self._inflight) == 0
 
     def inflight_count(self) -> Int:
-        """Counts the DATA chunks awaiting their cumulative ack.
-
-        Returns:
-            The number of chunks.
-        """
+        """Counts the DATA chunks awaiting their cumulative ack."""
         return len(self._inflight)
 
     def queue_message(
@@ -344,16 +286,7 @@ struct Sender(Movable):
         unordered: Bool,
         max_retransmits: Int,
     ):
-        """Queues one user message behind everything queued before it.
-
-        Args:
-            stream_id: The outbound stream.
-            ppid: The payload protocol identifier.
-            payload: The user data, not empty.
-            unordered: Whether to deliver without ordering.
-            max_retransmits: Retransmissions before the message is given
-                up; negative means fully reliable.
-        """
+        """Queues one user message behind everything queued before it."""
         self._pending.append(
             _OutMessage(
                 stream_id, ppid, unordered, max_retransmits, payload, False
@@ -366,9 +299,6 @@ struct Sender(Movable):
 
         The stream becomes ready for an Outgoing SSN Reset Request once all
         earlier messages have been assigned TSNs; see `take_reset_ready()`.
-
-        Args:
-            stream_id: The outbound stream to reset.
         """
         var empty = List[UInt8]()
         self._pending.append(
@@ -379,9 +309,6 @@ struct Sender(Movable):
         """Takes the streams whose queued reset reached the head of the queue.
 
         Sending on these streams is held back until `finish_reset()`.
-
-        Returns:
-            The stream identifiers, in the order the resets were queued.
         """
         self._absorb_reset_markers()
         var ready = self._reset_ready.copy()
@@ -389,13 +316,7 @@ struct Sender(Movable):
         return ready^
 
     def finish_reset(mut self, stream_ids: Span[UInt16, _], performed: Bool):
-        """Completes a reset request and lets the streams send again.
-
-        Args:
-            stream_ids: The streams of the answered request.
-            performed: Whether the peer performed the reset, in which case
-                the stream sequence numbers restart at 0.
-        """
+        """Completes a reset request and lets the streams send again."""
         for s in stream_ids:
             try:
                 if s in self._blocked:
@@ -532,19 +453,7 @@ struct Sender(Movable):
             self._forward_needed = True
 
     def on_sack(mut self, sack: SackChunk, now_ms: Int) raises -> Bool:
-        """Processes a SACK from the peer.
-
-        Args:
-            sack: The decoded SACK.
-            now_ms: The current time in milliseconds.
-
-        Returns:
-            `False` if the SACK acknowledges a TSN that was never sent,
-            which is a protocol violation; `True` otherwise.
-
-        Raises:
-            Error: If the internal bookkeeping is inconsistent.
-        """
+        """Processes a SACK from the peer."""
         self.progress = False
         if tsn_lt(sack.cumulative_tsn, self._cum_ack):
             return True
@@ -730,9 +639,6 @@ struct Sender(Movable):
         the highest unacknowledged chunk for one retransmission that
         bypasses the congestion window. Neither backs off the RTO; the next
         probe waits twice as long unless an acknowledgement arrives first.
-
-        Args:
-            now_ms: The current time in milliseconds.
         """
         self.probe.stop()
         if self._rack_detect(now_ms) > 0:
@@ -762,9 +668,6 @@ struct Sender(Movable):
         The congestion window collapses to one MTU, the timeout doubles and
         every chunk still unacknowledged is marked for retransmission or,
         if its retransmission limit is used up, abandoned.
-
-        Args:
-            now_ms: The current time in milliseconds.
         """
         self.t3_expiries += 1
         self.probe.stop()
@@ -822,17 +725,6 @@ struct Sender(Movable):
 
         Writes a FORWARD-TSN if one is due, then retransmissions, then new
         DATA fragments, each only while the packet stays within `limit`.
-
-        Args:
-            out: The packet being built.
-            limit: The largest packet size in bytes.
-            now_ms: The current time in milliseconds.
-
-        Returns:
-            The number of chunks appended.
-
-        Raises:
-            Error: If the internal bookkeeping is inconsistent.
         """
         var added = self._fill(out, limit, now_ms)
         if added > 0:
@@ -966,12 +858,7 @@ struct Sender(Movable):
         return added
 
     def has_sendable(self) -> Bool:
-        """Checks whether `fill()` might have something to write.
-
-        Returns:
-            `True` if data is queued, marked for retransmission, or a
-            FORWARD-TSN is due.
-        """
+        """Checks whether `fill()` might have something to write."""
         return (
             len(self._pending) > 0 or self._marked > 0 or self._forward_needed
         )

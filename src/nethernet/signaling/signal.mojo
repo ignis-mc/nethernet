@@ -99,25 +99,14 @@ struct Signal(Copyable, Writable):
         data: StringSpan,
         network_id: StringSpan,
     ):
-        """Creates a signal.
-
-        Args:
-            kind: One of the `SIGNAL_*` type names.
-            connection_id: The connection identifier.
-            data: The payload.
-            network_id: The peer's network ID.
-        """
+        """Creates a signal."""
         self.kind = String(kind)
         self.connection_id = connection_id
         self.data = String(data)
         self.network_id = String(network_id)
 
     def encode(self) -> String:
-        """Formats the signal as `TYPE <connection id> <data>`.
-
-        Returns:
-            The wire text.
-        """
+        """Formats the signal as `TYPE <connection id> <data>`."""
         return String(t"{self.kind} {self.connection_id} {self.data}")
 
     def error_code(self) -> Int:
@@ -125,9 +114,6 @@ struct Signal(Copyable, Writable):
 
         Like go-nethernet, only the leading decimal digits (with an optional
         minus sign) count; anything else reads as 0.
-
-        Returns:
-            The signed 32-bit error code.
         """
         var bytes = self.data.as_bytes()
         var i = 0
@@ -144,11 +130,7 @@ struct Signal(Copyable, Writable):
         return -v if negative else v
 
     def write_to(self, mut writer: Some[Writer]):
-        """Writes the wire text.
-
-        Args:
-            writer: The destination.
-        """
+        """Writes the wire text."""
         writer.write(self.encode())
 
 
@@ -157,17 +139,6 @@ def parse_signal(text: StringSpan, network_id: StringSpan) raises -> Signal:
 
     The connection ID is read from its leading decimal digits, so `42junk`
     is 42 and `0x10` is 0, which is what go-nethernet accepts.
-
-    Args:
-        text: The wire text.
-        network_id: The network ID of the sender, recorded in the result.
-
-    Returns:
-        The decoded signal.
-
-    Raises:
-        Error: If there are fewer than three space-separated parts, the type
-            is unknown, or the connection ID is empty, signed or overflows.
     """
     var first = text.find(" ")
     if first <= 0:
@@ -211,57 +182,27 @@ trait Signaling(Deinitable, Movable):
     """
 
     def network_id(self) -> String:
-        """Gets the network ID other peers use to reach this end.
-
-        Returns:
-            The local network ID.
-        """
+        """Gets the network ID other peers use to reach this end."""
         ...
 
     def send_signal(mut self, signal: Signal) raises:
-        """Sends a signal to the peer named by `signal.network_id`.
-
-        Args:
-            signal: The signal to deliver.
-
-        Raises:
-            Error: If the peer is unknown or the channel cannot send.
-        """
+        """Sends a signal to the peer named by `signal.network_id`."""
         ...
 
     def poll_signal(mut self) -> Optional[Signal]:
-        """Takes the next received signal.
-
-        Returns:
-            A signal whose `network_id` names the sender, or `None`.
-        """
+        """Takes the next received signal."""
         ...
 
     def service(mut self, now_ms: Int) raises:
-        """Performs pending I/O and periodic work without blocking.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
-
-        Raises:
-            Error: If the channel has failed.
-        """
+        """Performs pending I/O and periodic work without blocking."""
         ...
 
     def poll_fd(self) -> Int:
-        """Gets a descriptor that becomes readable when `service()` has work.
-
-        Returns:
-            A file descriptor, or -1 if there is none.
-        """
+        """Gets a descriptor that becomes readable when `service()` has work."""
         ...
 
     def trickle(self) -> Bool:
-        """Says whether candidates can be signaled after the description.
-
-        Returns:
-            `False` if every candidate must be embedded in the SDP.
-        """
+        """Says whether candidates can be signaled after the description."""
         ...
 
     def add_poll_fds(self, mut set: PollSet):
@@ -269,9 +210,6 @@ trait Signaling(Deinitable, Movable):
 
         The default adds `poll_fd()`. Channels with several sockets override
         this so an event loop wakes for all of them.
-
-        Args:
-            set: The set to add the descriptors to.
         """
         var fd = self.poll_fd()
         if fd >= 0:

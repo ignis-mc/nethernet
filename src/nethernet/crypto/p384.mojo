@@ -299,11 +299,7 @@ comptime _CURVE = _make_curve()
 
 
 def p384_curve() -> ref[ImmStaticOrigin] Curve[6]:
-    """Returns the P-384 domain parameters.
-
-    Returns:
-        A reference to the one static curve description.
-    """
+    """Returns the P-384 domain parameters."""
     return global_constant[_CURVE]()
 
 
@@ -315,32 +311,12 @@ def p384_private_key_from_bytes(
     Interprets the seed as a big-endian integer, reduces it modulo `n - 1`
     and adds one, which gives a scalar in `[1, n - 1]` whose distribution is
     within `2^-64` of uniform. Constant-time in the seed value.
-
-    Args:
-        seed: At least 56 uniformly random bytes.
-
-    Returns:
-        The 48-byte big-endian private scalar.
-
-    Raises:
-        Error: If the seed is shorter than 56 bytes.
     """
     return ec_private_key_from_bytes(p384_curve(), seed)
 
 
 def p384_public_key(private_key: Span[UInt8, _]) raises -> Array[UInt8, 97]:
-    """Computes the P-384 public key of a private scalar in constant time.
-
-    Args:
-        private_key: The 48-byte big-endian private scalar.
-
-    Returns:
-        The public point in uncompressed SEC 1 form, `0x04 || X || Y`.
-
-    Raises:
-        Error: If the scalar is not 48 bytes, is zero, or is not below the
-            group order.
-    """
+    """Computes the P-384 public key of a private scalar in constant time."""
     return ec_public_key(p384_curve(), private_key)
 
 
@@ -352,18 +328,6 @@ def p384_ecdh(
     The scalar multiplication is constant-time. The peer key is fully
     validated first: length, `0x04` prefix, coordinates below `p`, and the
     curve equation.
-
-    Args:
-        private_key: The 48-byte big-endian private scalar.
-        peer_public_key: The peer's 97-byte uncompressed point.
-
-    Returns:
-        The 48-byte big-endian affine x-coordinate of the shared point.
-
-    Raises:
-        Error: If the private scalar is invalid, if the peer key is not a
-            valid uncompressed point on the curve, or if the shared point is
-            the point at infinity.
     """
     return ecdh(p384_curve(), private_key, peer_public_key)
 
@@ -376,18 +340,6 @@ def p384_sign(
     The nonce is derived deterministically as in RFC 6979 with HMAC-SHA-384,
     so no randomness is needed. Constant-time in the private key and the
     nonce; see `nethernet.crypto.ec.ecdsa_sign()`.
-
-    Args:
-        private_key: The 48-byte big-endian private scalar.
-        digest: The message digest, of any length. Digests longer than 48
-            bytes are truncated to their leftmost 48 bytes (FIPS 186-4).
-
-    Returns:
-        The raw signature `r || s`, two 48-byte big-endian integers.
-
-    Raises:
-        Error: If the scalar is not 48 bytes, is zero, or is not below the
-            group order.
     """
     return ecdsa_sign[H=Sha384](p384_curve(), private_key, digest)
 
@@ -400,15 +352,5 @@ def p384_verify(
     """Verifies an ECDSA signature over P-384.
 
     Variable-time: every input is public. Never raises.
-
-    Args:
-        public_key: The signer's 97-byte uncompressed point.
-        digest: The message digest, of any length; reduced as when signing.
-        signature: The raw 96-byte signature `r || s`.
-
-    Returns:
-        `True` if the signature is valid. Malformed keys and signatures (a
-        wrong length, `r` or `s` equal to zero or not below the group order,
-        a point that is not on the curve) give `False`.
     """
     return ecdsa_verify(p384_curve(), public_key, digest, signature)

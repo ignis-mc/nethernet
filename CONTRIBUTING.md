@@ -8,7 +8,7 @@ pixi install
 pixi run check
 ```
 
-`pixi run check` checks formatting, lints docstrings, precompiles the
+`pixi run check` checks formatting, builds the API docs, precompiles the
 package, imports it from a consumer program and runs every unit test. `pixi run -e interop interop` additionally runs
 the go-nethernet interop matrix and installs Go for it.
 

@@ -82,11 +82,7 @@ struct Sha1(Hash):
         self._state[4] += e
 
     def update(mut self, data: Span[UInt8, _]):
-        """Absorbs more input.
-
-        Args:
-            data: The bytes to hash.
-        """
+        """Absorbs more input."""
         self._total_len += UInt64(len(data))
         for b in data:
             self._block[self._block_len] = b
@@ -99,9 +95,6 @@ struct Sha1(Hash):
         """Pads the input and produces the digest.
 
         The hasher must not be used again afterwards.
-
-        Returns:
-            The 20-byte digest.
         """
         var bit_len = self._total_len * 8
         self._block[self._block_len] = 0x80
@@ -128,14 +121,7 @@ struct Sha1(Hash):
 
 
 def sha1(data: Span[UInt8, _]) -> Array[UInt8, 20]:
-    """Computes the SHA-1 digest of `data`.
-
-    Args:
-        data: The bytes to hash.
-
-    Returns:
-        The 20-byte digest.
-    """
+    """Computes the SHA-1 digest of `data`."""
     var h = Sha1()
     h.update(data)
     return h.finish()

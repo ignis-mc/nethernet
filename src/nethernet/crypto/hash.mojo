@@ -14,19 +14,12 @@ trait Hash(Copyable, Defaultable, Deinitable):
     """The digest size in bytes."""
 
     def update(mut self, data: Span[UInt8, _]):
-        """Absorbs more input.
-
-        Args:
-            data: The bytes to hash.
-        """
+        """Absorbs more input."""
         ...
 
     def finish(mut self) -> Array[UInt8, Self.DIGEST_SIZE]:
         """Pads the input and produces the digest.
 
         The hasher must not be used again afterwards.
-
-        Returns:
-            The digest.
         """
         ...

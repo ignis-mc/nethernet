@@ -21,20 +21,7 @@ from std.sys.info import CompilationTarget
 def syscall6(
     nr: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int
 ) -> Int:
-    """Executes one Linux system call.
-
-    Args:
-        nr: The system call number for the target architecture.
-        a0: The first argument.
-        a1: The second argument.
-        a2: The third argument.
-        a3: The fourth argument.
-        a4: The fifth argument.
-        a5: The sixth argument.
-
-    Returns:
-        The raw kernel result: non-negative on success, `-errno` on failure.
-    """
+    """Executes one Linux system call."""
     comptime if CompilationTarget.is_x86():
         # nr in rax; args in rdi rsi rdx r10 r8 r9; result in rax. The
         # instruction clobbers rcx and r11.
@@ -108,26 +95,12 @@ struct Errno(Equatable, ImplicitlyCopyable, Writable):
     """The errno value, for example 11 for `EAGAIN`."""
 
     def write_to(self, mut writer: Some[Writer]):
-        """Writes a short description such as `errno 11`.
-
-        Args:
-            writer: The destination.
-        """
+        """Writes a short description such as `errno 11`."""
         writer.write("errno ", self.code)
 
 
 def check(rc: Int) raises Errno -> Int:
-    """Converts a raw system-call result into a value or an `Errno`.
-
-    Args:
-        rc: The raw result from `syscall6()`.
-
-    Returns:
-        `rc` when it is non-negative.
-
-    Raises:
-        Errno: If `rc` is negative.
-    """
+    """Converts a raw system-call result into a value or an `Errno`."""
     if rc < 0:
         raise Errno(-rc)
     return rc
@@ -148,15 +121,7 @@ struct SockAddrIn(Copyable):
 
     @staticmethod
     def from_host(ip: UInt32, port: UInt16) -> Self:
-        """Builds an address from host-order values.
-
-        Args:
-            ip: The IPv4 address with the first octet in the top byte.
-            port: The port number.
-
-        Returns:
-            The kernel-layout address.
-        """
+        """Builds an address from host-order values."""
         return Self(
             family=AF_INET,
             port_be=byte_swap(port),
@@ -165,19 +130,11 @@ struct SockAddrIn(Copyable):
         )
 
     def ip(self) -> UInt32:
-        """Gets the IPv4 address in host order.
-
-        Returns:
-            The address with the first octet in the top byte.
-        """
+        """Gets the IPv4 address in host order."""
         return byte_swap(self.addr_be)
 
     def port(self) -> UInt16:
-        """Gets the port in host order.
-
-        Returns:
-            The port number.
-        """
+        """Gets the port in host order."""
         return byte_swap(self.port_be)
 
 
@@ -192,49 +149,19 @@ struct Timespec(Copyable):
 
 
 def sys_close(fd: Int) -> Int:
-    """Closes a file descriptor.
-
-    Args:
-        fd: The descriptor to close.
-
-    Returns:
-        The raw kernel result.
-    """
+    """Closes a file descriptor."""
     return syscall6(SYS_CLOSE, fd, 0, 0, 0, 0, 0)
 
 
 def sys_socket(domain: Int, type: Int, protocol: Int) raises Errno -> Int:
-    """Creates a socket.
-
-    Args:
-        domain: The address family.
-        type: The socket type, optionally OR-ed with `SOCK_NONBLOCK` and
-            `SOCK_CLOEXEC`.
-        protocol: The protocol, or 0 for the default.
-
-    Returns:
-        The new descriptor.
-
-    Raises:
-        Errno: If the kernel refuses.
-    """
+    """Creates a socket."""
     return check(syscall6(SYS_SOCKET, domain, type, protocol, 0, 0, 0))
 
 
 def sys_setsockopt_int(
     fd: Int, level: Int, name: Int, value: Int32
 ) raises Errno:
-    """Sets an integer socket option.
-
-    Args:
-        fd: The socket.
-        level: The option level.
-        name: The option name.
-        value: The option value.
-
-    Raises:
-        Errno: If the kernel refuses.
-    """
+    """Sets an integer socket option."""
     var v = value
     var rc = syscall6(SYS_SETSOCKOPT, fd, level, name, Int(Pointer(to=v)), 4, 0)
     _ = v
@@ -242,19 +169,7 @@ def sys_setsockopt_int(
 
 
 def sys_getsockopt_int(fd: Int, level: Int, name: Int) raises Errno -> Int32:
-    """Reads an integer socket option.
-
-    Args:
-        fd: The socket.
-        level: The option level.
-        name: The option name.
-
-    Returns:
-        The option value.
-
-    Raises:
-        Errno: If the kernel refuses.
-    """
+    """Reads an integer socket option."""
     var v = Int32(0)
     var vlen = Int32(4)
     var rc = syscall6(
@@ -272,55 +187,22 @@ def sys_getsockopt_int(fd: Int, level: Int, name: Int) raises Errno -> Int32:
 
 
 def sys_bind(fd: Int, mut addr: SockAddrIn) raises Errno:
-    """Binds a socket to a local address.
-
-    Args:
-        fd: The socket.
-        addr: The local address.
-
-    Raises:
-        Errno: If the kernel refuses.
-    """
+    """Binds a socket to a local address."""
     _ = check(syscall6(SYS_BIND, fd, Int(Pointer(to=addr)), 16, 0, 0, 0))
 
 
 def sys_connect(fd: Int, mut addr: SockAddrIn) -> Int:
-    """Connects a socket, returning the raw result.
-
-    Args:
-        fd: The socket.
-        addr: The peer address.
-
-    Returns:
-        0 on success, or `-errno` (for example `-EINPROGRESS`).
-    """
+    """Connects a socket, returning the raw result."""
     return syscall6(SYS_CONNECT, fd, Int(Pointer(to=addr)), 16, 0, 0, 0)
 
 
 def sys_listen(fd: Int, backlog: Int) raises Errno:
-    """Marks a socket as accepting connections.
-
-    Args:
-        fd: The socket.
-        backlog: The pending-connection queue length.
-
-    Raises:
-        Errno: If the kernel refuses.
-    """
+    """Marks a socket as accepting connections."""
     _ = check(syscall6(SYS_LISTEN, fd, backlog, 0, 0, 0, 0))
 
 
 def sys_accept4(fd: Int, mut peer: SockAddrIn, flags: Int) -> Int:
-    """Accepts a pending connection, returning the raw result.
-
-    Args:
-        fd: The listening socket.
-        peer: Receives the peer address.
-        flags: `SOCK_NONBLOCK` and/or `SOCK_CLOEXEC` for the new socket.
-
-    Returns:
-        The new descriptor, or `-errno` (for example `-EAGAIN`).
-    """
+    """Accepts a pending connection, returning the raw result."""
     var alen = Int32(16)
     var rc = syscall6(
         SYS_ACCEPT4,
@@ -336,15 +218,7 @@ def sys_accept4(fd: Int, mut peer: SockAddrIn, flags: Int) -> Int:
 
 
 def sys_getsockname(fd: Int, mut addr: SockAddrIn) raises Errno:
-    """Reads the local address of a socket.
-
-    Args:
-        fd: The socket.
-        addr: Receives the local address.
-
-    Raises:
-        Errno: If the kernel refuses.
-    """
+    """Reads the local address of a socket."""
     var alen = Int32(16)
     var rc = syscall6(
         SYS_GETSOCKNAME,
@@ -360,16 +234,7 @@ def sys_getsockname(fd: Int, mut addr: SockAddrIn) raises Errno:
 
 
 def sys_sendto(fd: Int, buf: Span[UInt8, _], mut to: SockAddrIn) -> Int:
-    """Sends a datagram to an address, returning the raw result.
-
-    Args:
-        fd: The socket.
-        buf: The payload.
-        to: The destination.
-
-    Returns:
-        The number of bytes sent, or `-errno`.
-    """
+    """Sends a datagram to an address, returning the raw result."""
     return syscall6(
         SYS_SENDTO,
         fd,
@@ -382,15 +247,7 @@ def sys_sendto(fd: Int, buf: Span[UInt8, _], mut to: SockAddrIn) -> Int:
 
 
 def sys_send(fd: Int, buf: Span[UInt8, _]) -> Int:
-    """Sends bytes on a connected socket, returning the raw result.
-
-    Args:
-        fd: The socket.
-        buf: The bytes to send.
-
-    Returns:
-        The number of bytes sent, or `-errno`.
-    """
+    """Sends bytes on a connected socket, returning the raw result."""
     return syscall6(
         SYS_SENDTO, fd, Int(buf.unsafe_ptr()), len(buf), MSG_NOSIGNAL, 0, 0
     )
@@ -399,16 +256,7 @@ def sys_send(fd: Int, buf: Span[UInt8, _]) -> Int:
 def sys_recvfrom(
     fd: Int, buf: Span[mut=True, UInt8, _], mut from_addr: SockAddrIn
 ) -> Int:
-    """Receives a datagram and its source, returning the raw result.
-
-    Args:
-        fd: The socket.
-        buf: Receives the payload.
-        from_addr: Receives the source address.
-
-    Returns:
-        The number of bytes received, or `-errno` (for example `-EAGAIN`).
-    """
+    """Receives a datagram and its source, returning the raw result."""
     var alen = Int32(16)
     var rc = syscall6(
         SYS_RECVFROM,
@@ -424,40 +272,17 @@ def sys_recvfrom(
 
 
 def sys_recv(fd: Int, buf: Span[mut=True, UInt8, _]) -> Int:
-    """Receives bytes from a connected socket, returning the raw result.
-
-    Args:
-        fd: The socket.
-        buf: Receives the bytes.
-
-    Returns:
-        The number of bytes received (0 at end of stream), or `-errno`.
-    """
+    """Receives bytes from a connected socket, returning the raw result."""
     return syscall6(SYS_RECVFROM, fd, Int(buf.unsafe_ptr()), len(buf), 0, 0, 0)
 
 
 def sys_shutdown(fd: Int, how: Int) -> Int:
-    """Shuts down part of a connection.
-
-    Args:
-        fd: The socket.
-        how: `SHUT_RDWR` or one of the other shutdown modes.
-
-    Returns:
-        The raw kernel result.
-    """
+    """Shuts down part of a connection."""
     return syscall6(SYS_SHUTDOWN, fd, how, 0, 0, 0, 0)
 
 
 def sys_clock_ns(clock: Int) -> Int:
-    """Reads a kernel clock.
-
-    Args:
-        clock: `CLOCK_MONOTONIC` or `CLOCK_REALTIME`.
-
-    Returns:
-        The clock value in nanoseconds.
-    """
+    """Reads a kernel clock."""
     var ts = Timespec(0, 0)
     var rc = syscall6(SYS_CLOCK_GETTIME, clock, Int(Pointer(to=ts)), 0, 0, 0, 0)
     _ = rc
@@ -465,17 +290,7 @@ def sys_clock_ns(clock: Int) -> Int:
 
 
 def sys_getrandom(buf: Span[mut=True, UInt8, _]) raises Errno -> Int:
-    """Fills a buffer from the kernel's random number generator.
-
-    Args:
-        buf: Receives the random bytes.
-
-    Returns:
-        The number of bytes written, which may be fewer than requested.
-
-    Raises:
-        Errno: If the kernel refuses.
-    """
+    """Fills a buffer from the kernel's random number generator."""
     return check(
         syscall6(SYS_GETRANDOM, Int(buf.unsafe_ptr()), len(buf), 0, 0, 0, 0)
     )
@@ -490,17 +305,6 @@ def sys_ppoll(
     `struct pollfd`: slot 0 is the descriptor; slot 1 holds the requested
     events in its low 16 bits and receives the returned events in its high
     16 bits.
-
-    Args:
-        pollfds: The `pollfd` records, two slots per descriptor.
-        timeout_ms: The longest time to wait; negative waits forever.
-
-    Returns:
-        The number of descriptors with events, 0 on timeout. An interrupted
-        wait also returns 0.
-
-    Raises:
-        Errno: If the kernel refuses.
     """
     var ts = Timespec(
         Int64(timeout_ms // 1000), Int64((timeout_ms % 1000) * 1_000_000)

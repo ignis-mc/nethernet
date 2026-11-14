@@ -81,20 +81,7 @@ struct DialAttempt(Movable):
     ](
         out self, mut signaling: S, network_id: StringSpan, config: DialConfig
     ) raises:
-        """Creates the connection and signals the offer.
-
-        Parameters:
-            S: The signaling channel type.
-
-        Args:
-            signaling: The channel to the peer.
-            network_id: The network ID to dial.
-            config: The dial settings.
-
-        Raises:
-            Error: If the socket cannot be created or the offer cannot be
-                signaled.
-        """
+        """Creates the connection and signals the offer."""
         var connection_id = config.connection_id
         if connection_id == 0:
             connection_id = random_u64()
@@ -145,27 +132,15 @@ struct DialAttempt(Movable):
             )
 
     def fd(self) -> Int:
-        """Gets the connection's socket descriptor.
-
-        Returns:
-            The file descriptor to wait on.
-        """
+        """Gets the connection's socket descriptor."""
         return self._conn.fd()
 
     def next_timeout(self) -> Int:
-        """Computes when `poll()` next has timer work to do.
-
-        Returns:
-            An absolute monotonic time in milliseconds.
-        """
+        """Computes when `poll()` next has timer work to do."""
         return min(self._conn.next_timeout(), self._deadline_ms)
 
     def is_done(self) -> Bool:
-        """Checks whether the attempt has succeeded or failed.
-
-        Returns:
-            `True` once `finish()` can be called.
-        """
+        """Checks whether the attempt has succeeded or failed."""
         return (
             self._conn.is_open()
             or self._conn.is_closed()
@@ -205,16 +180,6 @@ struct DialAttempt(Movable):
 
         Signals for other connections are discarded, so a signaling channel
         should serve one dial at a time.
-
-        Parameters:
-            S: The signaling channel type.
-
-        Args:
-            signaling: The channel to the peer.
-            now_ms: The current monotonic time in milliseconds.
-
-        Raises:
-            Error: If the signaling channel or the socket fails.
         """
         if self.is_done():
             return
@@ -278,14 +243,7 @@ struct DialAttempt(Movable):
                 self._error = "timed out waiting for the answer"
 
     def finish(deinit self) raises -> Conn:
-        """Takes the open connection, or reports why the dial failed.
-
-        Returns:
-            The open connection.
-
-        Raises:
-            Error: If the attempt failed or is not finished.
-        """
+        """Takes the open connection, or reports why the dial failed."""
         if self._error.byte_length() > 0:
             self._conn.abort()
             raise Error(t"dial failed: {self._error}")
@@ -300,23 +258,7 @@ struct DialAttempt(Movable):
 def dial[
     S: Signaling
 ](mut signaling: S, network_id: StringSpan, config: DialConfig) raises -> Conn:
-    """Connects to the peer with the given network ID, blocking until open.
-
-    Parameters:
-        S: The signaling channel type.
-
-    Args:
-        signaling: The channel to the peer.
-        network_id: The network ID to dial.
-        config: The dial settings.
-
-    Returns:
-        The open connection.
-
-    Raises:
-        Error: If the peer rejects the connection, negotiation times out, or
-            a socket fails.
-    """
+    """Connects to the peer with the given network ID, blocking until open."""
     var attempt = DialAttempt(signaling, network_id, config)
     while not attempt.is_done():
         var now = monotonic_ms()

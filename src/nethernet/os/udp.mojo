@@ -32,15 +32,7 @@ struct UdpSocket(Movable):
     def __init__(
         out self, bind_addr: SocketAddr, reuse_addr: Bool = False
     ) raises Errno:
-        """Creates a socket bound to `bind_addr`.
-
-        Args:
-            bind_addr: The local address; port 0 picks a free port.
-            reuse_addr: Whether to set `SO_REUSEADDR` before binding.
-
-        Raises:
-            Errno: If the socket cannot be created or bound.
-        """
+        """Creates a socket bound to `bind_addr`."""
         self._fd = sys_socket(
             AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0
         )
@@ -58,35 +50,17 @@ struct UdpSocket(Movable):
         _ = sys_close(self._fd)
 
     def fd(self) -> Int:
-        """Gets the descriptor, for use with `PollSet`.
-
-        Returns:
-            The file descriptor.
-        """
+        """Gets the descriptor, for use with `PollSet`."""
         return self._fd
 
     def local_addr(self) raises Errno -> SocketAddr:
-        """Reads the address the socket is bound to.
-
-        Returns:
-            The local address, with the kernel-assigned port if 0 was asked.
-
-        Raises:
-            Errno: If the kernel refuses.
-        """
+        """Reads the address the socket is bound to."""
         var sa = SockAddrIn.from_host(0, 0)
         sys_getsockname(self._fd, sa)
         return SocketAddr(sa.ip(), sa.port())
 
     def set_broadcast(self, enabled: Bool) raises Errno:
-        """Allows or forbids sending to broadcast addresses.
-
-        Args:
-            enabled: Whether broadcast datagrams may be sent.
-
-        Raises:
-            Errno: If the kernel refuses.
-        """
+        """Allows or forbids sending to broadcast addresses."""
         sys_setsockopt_int(
             self._fd, SOL_SOCKET, SO_BROADCAST, Int32(1 if enabled else 0)
         )
@@ -94,19 +68,7 @@ struct UdpSocket(Movable):
     def send_to(
         self, data: Span[UInt8, _], dest: SocketAddr
     ) raises Errno -> Bool:
-        """Sends one datagram.
-
-        Args:
-            data: The payload.
-            dest: The destination address.
-
-        Returns:
-            `True` if the datagram was queued, `False` if the socket buffer
-            is full and the datagram was dropped.
-
-        Raises:
-            Errno: If the kernel rejects the send for another reason.
-        """
+        """Sends one datagram."""
         var sa = SockAddrIn.from_host(dest.ip, dest.port)
         var rc = sys_sendto(self._fd, data, sa)
         if rc == -EAGAIN:
@@ -117,18 +79,7 @@ struct UdpSocket(Movable):
     def recv_from(
         self, buf: Span[mut=True, UInt8, _], mut src: SocketAddr
     ) raises Errno -> Int:
-        """Receives one datagram if one is waiting.
-
-        Args:
-            buf: Receives the payload; longer datagrams are truncated.
-            src: Receives the sender's address.
-
-        Returns:
-            The payload length, or -1 if nothing is waiting.
-
-        Raises:
-            Errno: If the kernel reports an error other than "would block".
-        """
+        """Receives one datagram if one is waiting."""
         var sa = SockAddrIn.from_host(0, 0)
         var rc = sys_recvfrom(self._fd, buf, sa)
         if rc == -EAGAIN:
@@ -143,13 +94,6 @@ def default_local_ip() raises Errno -> UInt32:
 
     Connects a UDP socket towards a public address (no packet is sent) and
     reads back the source address the kernel picked.
-
-    Returns:
-        The address with the first octet in the top byte.
-
-    Raises:
-        Errno: If there is no route, for example on a host with only a
-            loopback interface.
     """
     var fd = sys_socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)
     var target = SockAddrIn.from_host(0x08080808, 53)

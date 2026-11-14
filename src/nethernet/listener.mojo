@@ -82,9 +82,6 @@ struct Listener[S: Signaling](Movable):
 
     The listener owns its signaling channel. It is polled: call `poll()`
     regularly (or `accept()`, which does) so that negotiations advance.
-
-    Parameters:
-        S: The signaling channel type.
     """
 
     var _signaling: Self.S
@@ -94,16 +91,7 @@ struct Listener[S: Signaling](Movable):
     var _identity_key: List[UInt8]
 
     def __init__(out self, var signaling: Self.S, config: ListenConfig) raises:
-        """Creates a listener on a signaling channel.
-
-        Args:
-            signaling: The channel offers arrive on; the listener takes it.
-            config: The listener settings.
-
-        Raises:
-            Error: If an identity key has to be generated and the kernel
-                cannot supply randomness.
-        """
+        """Creates a listener on a signaling channel."""
         var key = config.identity_key.copy()
         if len(key) == 0:
             var seed = random_bytes(56)
@@ -116,35 +104,19 @@ struct Listener[S: Signaling](Movable):
         self._identity_key = key^
 
     def identity_key(self) -> List[UInt8]:
-        """Gets the P-384 identity key answers are signed with.
-
-        Returns:
-            The 48-byte private scalar, for persisting across restarts.
-        """
+        """Gets the P-384 identity key answers are signed with."""
         return self._identity_key.copy()
 
     def signaling(mut self) -> ref[self._signaling] Self.S:
-        """Borrows the signaling channel, for example to set server data.
-
-        Returns:
-            A reference to the channel the listener owns.
-        """
+        """Borrows the signaling channel, for example to set server data."""
         return self._signaling
 
     def network_id(self) -> String:
-        """Gets the network ID peers dial to reach this listener.
-
-        Returns:
-            The signaling channel's local network ID.
-        """
+        """Gets the network ID peers dial to reach this listener."""
         return self._signaling.network_id()
 
     def pending_count(self) -> Int:
-        """Counts the connections still being negotiated.
-
-        Returns:
-            The number of incoming connections not yet open.
-        """
+        """Counts the connections still being negotiated."""
         return len(self._pending)
 
     def add_poll_fds(self, mut set: PollSet):
@@ -154,20 +126,13 @@ struct Listener[S: Signaling](Movable):
         connection still being negotiated. An event loop that waits on these
         (and until `next_timeout()`) reacts to each handshake packet at once
         instead of on its next tick.
-
-        Args:
-            set: The set to add the descriptors to.
         """
         self._signaling.add_poll_fds(set)
         for i in range(len(self._pending)):
             _ = set.add(self._pending[i].conn.fd())
 
     def next_timeout(self) -> Int:
-        """Computes when `poll()` next has timer work to do.
-
-        Returns:
-            An absolute monotonic time in milliseconds.
-        """
+        """Computes when `poll()` next has timer work to do."""
         var t = _NEVER
         for i in range(len(self._pending)):
             t = min(t, self._pending[i].conn.next_timeout())
@@ -284,14 +249,7 @@ struct Listener[S: Signaling](Movable):
             )
 
     def poll(mut self, now_ms: Int) raises:
-        """Processes signals and advances every pending negotiation.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
-
-        Raises:
-            Error: If the signaling channel fails.
-        """
+        """Processes signals and advances every pending negotiation."""
         self._signaling.service(now_ms)
         while True:
             var next = self._signaling.poll_signal()
@@ -335,27 +293,13 @@ struct Listener[S: Signaling](Movable):
             i += 1
 
     def try_accept(mut self) -> Optional[Conn]:
-        """Takes a connection that finished opening, without blocking.
-
-        Returns:
-            An open connection, or `None` if none is ready.
-        """
+        """Takes a connection that finished opening, without blocking."""
         if len(self._ready) == 0:
             return None
         return self._ready.pop(0)
 
     def accept(mut self, timeout_ms: Int) raises -> Optional[Conn]:
-        """Waits for the next incoming connection to open.
-
-        Args:
-            timeout_ms: The longest time to wait; negative waits forever.
-
-        Returns:
-            An open connection, or `None` if the timeout passes first.
-
-        Raises:
-            Error: If the signaling channel fails.
-        """
+        """Waits for the next incoming connection to open."""
         var deadline = _NEVER
         if timeout_ms >= 0:
             deadline = monotonic_ms() + timeout_ms

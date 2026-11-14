@@ -8,17 +8,7 @@ from ..wire import put_bytes
 def prf_sha256(
     secret: Span[UInt8, _], label: StringSpan, seed: Span[UInt8, _], length: Int
 ) -> List[UInt8]:
-    """Expands a secret into `length` bytes with `P_SHA256`.
-
-    Args:
-        secret: The secret to expand.
-        label: The ASCII label, for example `key expansion`.
-        seed: The seed that follows the label.
-        length: The number of output bytes wanted.
-
-    Returns:
-        `length` pseudorandom bytes.
-    """
+    """Expands a secret into `length` bytes with `P_SHA256`."""
     var label_seed = List[UInt8](label.as_bytes())
     put_bytes(label_seed, seed)
     var out = List[UInt8](capacity=length + 32)
