@@ -36,11 +36,7 @@ from .mont import (
 
 @fieldwise_init
 struct AffinePoint[n: Int](Copyable):
-    """A finite curve point `(x, y)` with coordinates in Montgomery form.
-
-    Parameters:
-        n: The limb count of the field.
-    """
+    """A finite curve point `(x, y)` with coordinates in Montgomery form."""
 
     var x: Array[UInt64, Self.n]
     """The x-coordinate, in Montgomery form."""
@@ -54,9 +50,6 @@ struct ProjectivePoint[n: Int](Copyable):
 
     The affine point is `(X / Z, Y / Z)`; the point at infinity has `Z = 0`.
     Coordinates are in Montgomery form.
-
-    Parameters:
-        n: The limb count of the field.
     """
 
     var x: Array[UInt64, Self.n]
@@ -73,9 +66,6 @@ struct Curve[n: Int](Copyable):
     Both the field prime and the group order must have exactly `64 * n` bits
     (true for P-256 with `n = 4` and P-384 with `n = 6`); several reductions
     rely on that.
-
-    Parameters:
-        n: The limb count of field elements and scalars.
     """
 
     var field: Modulus[Self.n]
@@ -107,20 +97,6 @@ struct Curve[n: Int](Copyable):
         """Derives a curve description from its domain parameters.
 
         All arguments are plain integers as little-endian 64-bit limbs.
-
-        Args:
-            p: The field prime.
-            order: The prime order of the base point.
-            b: The curve coefficient `b`.
-            gx: The x-coordinate of the base point.
-            gy: The y-coordinate of the base point.
-
-        Constraints:
-            Runs at run time only, like the `Modulus` constructor it calls.
-            It costs about `48 n` point doublings and fifteen field
-            inversions. For `comptime` constants use the constructor that
-            takes precomputed values and check them against this one in a
-            test.
         """
         self.field = Modulus[Self.n](p)
         self.scalar = Modulus[Self.n](order)
@@ -161,14 +137,6 @@ struct Curve[n: Int](Copyable):
         """Wraps precomputed curve constants without checking them.
 
         The values must equal what the deriving constructor computes.
-
-        Args:
-            field: Arithmetic modulo the field prime.
-            scalar: Arithmetic modulo the group order.
-            b: The curve coefficient `b`, in Montgomery form.
-            gx: The x-coordinate of the base point, in Montgomery form.
-            gy: The y-coordinate of the base point, in Montgomery form.
-            comb: The fixed-base comb table; see the `comb` field.
         """
         self.field = field.copy()
         self.scalar = scalar.copy()
@@ -178,52 +146,26 @@ struct Curve[n: Int](Copyable):
         self.comb = comb.copy()
 
     def infinity(self) -> ProjectivePoint[Self.n]:
-        """Returns the point at infinity, the group identity.
-
-        Returns:
-            The point `(0 : 1 : 0)`.
-        """
+        """Returns the point at infinity, the group identity."""
         var zero = Array[UInt64, Self.n](fill=0)
         return ProjectivePoint[Self.n](
             zero.copy(), self.field.one.copy(), zero^
         )
 
     def to_projective(self, p: AffinePoint[Self.n]) -> ProjectivePoint[Self.n]:
-        """Lifts an affine point to projective coordinates.
-
-        Args:
-            p: The affine point.
-
-        Returns:
-            The point `(x : y : 1)`.
-        """
+        """Lifts an affine point to projective coordinates."""
         return ProjectivePoint[Self.n](
             p.x.copy(), p.y.copy(), self.field.one.copy()
         )
 
     def is_infinity(self, p: ProjectivePoint[Self.n]) -> UInt64:
-        """Tests for the point at infinity in constant time.
-
-        Args:
-            p: The point to test.
-
-        Returns:
-            A mask with all bits set if `p` is the point at infinity, and
-            zero otherwise.
-        """
+        """Tests for the point at infinity in constant time."""
         return ct_is_zero(p.z)
 
     def to_affine(self, p: ProjectivePoint[Self.n]) -> AffinePoint[Self.n]:
         """Normalises a projective point in constant time.
 
         Costs one field inversion.
-
-        Args:
-            p: The point to normalise.
-
-        Returns:
-            The affine point, or `(0, 0)`, which is not on the curve, if `p`
-            is the point at infinity.
         """
         ref f = self.field
         var z_inv = f.inv(p.z)
@@ -235,13 +177,6 @@ struct Curve[n: Int](Copyable):
         """Checks the curve equation `y^2 = x^3 - 3 x + b`.
 
         Variable-time only in its one-bit result.
-
-        Args:
-            x: The x-coordinate in Montgomery form, in `[0, p)`.
-            y: The y-coordinate in Montgomery form, in `[0, p)`.
-
-        Returns:
-            `True` if `(x, y)` satisfies the curve equation.
         """
         ref f = self.field
         var lhs = f.square(y)
@@ -257,13 +192,6 @@ struct Curve[n: Int](Copyable):
 
         Complete: valid for every pair of curve points, including equal
         points, inverses and the point at infinity (RCB16 Algorithm 4).
-
-        Args:
-            p: The first point.
-            q: The second point.
-
-        Returns:
-            The sum `p + q`.
         """
         ref f = self.field
         var t0 = f.mul(p.x, q.x)
@@ -319,13 +247,6 @@ struct Curve[n: Int](Copyable):
         Complete for every `p`, including the point at infinity and `±q`
         (RCB16 Algorithm 5). The affine operand must be a curve point; the
         `(0, 0)` placeholder gives a meaningless result.
-
-        Args:
-            p: The projective point.
-            q: The affine point.
-
-        Returns:
-            The sum `p + q`.
         """
         ref f = self.field
         var t0 = f.mul(p.x, q.x)
@@ -371,12 +292,6 @@ struct Curve[n: Int](Copyable):
 
         Complete: valid for every curve point, including the point at
         infinity (RCB16 Algorithm 6).
-
-        Args:
-            p: The point to double.
-
-        Returns:
-            The point `2 p`.
         """
         ref f = self.field
         var t0 = f.square(p.x)
@@ -453,13 +368,6 @@ struct Curve[n: Int](Copyable):
         `0 p .. 15 p`, read with a full masked scan, and one complete
         addition per window whatever the digit is. The sequence of field
         operations and memory accesses does not depend on `k` or `p`.
-
-        Args:
-            k: The scalar as a plain integer; any value below `2^(64 n)`.
-            p: The point to multiply, which must be on the curve.
-
-        Returns:
-            The point `k p`.
         """
         var table = self._multiples(p)
         var top = 16 * Self.n - 1
@@ -515,12 +423,6 @@ struct Curve[n: Int](Copyable):
         the addition; a zero digit discards the sum with a constant-time
         select. The sequence of field operations and memory accesses does
         not depend on `k`.
-
-        Args:
-            k: The scalar as a plain integer; any value below `2^(64 n)`.
-
-        Returns:
-            The point `k G`.
         """
         var acc = self.infinity()
         for step in range(16 * Self.n):
@@ -546,14 +448,6 @@ struct Curve[n: Int](Copyable):
         fixed-base comb for `G`, using direct table indexing and skipping
         work for zero digits. Use it for signature verification only, never
         with a secret scalar.
-
-        Args:
-            u1: The public multiplier of the base point.
-            u2: The public multiplier of `q`.
-            q: A public point on the curve.
-
-        Returns:
-            The point `u1 G + u2 q`.
         """
         var q_table = self._multiples(q)
         var acc = self.infinity()
@@ -581,13 +475,6 @@ struct Curve[n: Int](Copyable):
 
         The range check itself is branch-free; only its one-bit outcome is
         revealed.
-
-        Args:
-            data: The big-endian bytes; exactly `8 * n` of them.
-            out: Receives the scalar as a plain integer.
-
-        Returns:
-            `True` if the length is right and the value is in range.
         """
         if len(data) != 8 * Self.n:
             return False
@@ -604,13 +491,6 @@ struct Curve[n: Int](Copyable):
         below `p`, and the curve equation. The curve has cofactor one, so a
         point that passes is in the prime-order group. Variable-time: the
         input is public.
-
-        Args:
-            data: The encoding `0x04 || X || Y`, `16 * n + 1` bytes.
-            out: Receives the point.
-
-        Returns:
-            `True` if the encoding is a valid curve point.
         """
         var size = 8 * Self.n
         if len(data) != 2 * size + 1:
@@ -631,15 +511,7 @@ struct Curve[n: Int](Copyable):
     def encode_point(
         self, p: AffinePoint[Self.n]
     ) -> Array[UInt8, 16 * Self.n + 1]:
-        """Encodes an affine point in uncompressed SEC 1 form.
-
-        Args:
-            p: The point to encode.
-
-        Returns:
-            The bytes `0x04 || X || Y` with fixed-width big-endian
-            coordinates.
-        """
+        """Encodes an affine point in uncompressed SEC 1 form."""
         var size = 8 * Self.n
         var out = Array[UInt8, 16 * Self.n + 1](fill=0)
         out[0] = 0x04
@@ -656,12 +528,6 @@ struct Curve[n: Int](Copyable):
         Follows FIPS 186-4 and the `bits2int` of RFC 6979: the leftmost
         `64 * n` bits of the digest, read big-endian, then reduced. Shorter
         digests are used whole.
-
-        Args:
-            digest: The message digest, of any length.
-
-        Returns:
-            The integer `e` as a plain value in `[0, order)`.
         """
         var count = len(digest)
         if count > 8 * Self.n:
@@ -670,15 +536,7 @@ struct Curve[n: Int](Copyable):
         return self.scalar.reduce_once(e)
 
     def x_mod_order(self, p: AffinePoint[Self.n]) -> Array[UInt64, Self.n]:
-        """Reduces the x-coordinate of a point modulo the group order.
-
-        Args:
-            p: The affine point.
-
-        Returns:
-            The x-coordinate as a plain integer modulo the order, as ECDSA
-            uses for `r`.
-        """
+        """Reduces the x-coordinate of a point modulo the group order."""
         return self.scalar.reduce_once(self.field.from_mont(p.x))
 
 
@@ -701,9 +559,6 @@ struct Rfc6979[H: Hash]:
     This is HMAC_DRBG keyed with the private key and the message digest. It
     yields the candidate byte strings `T` of step (h); the caller converts
     each to an integer and asks for another one if it is out of range.
-
-    Parameters:
-        H: The hash function used by HMAC.
     """
 
     var _key: Array[UInt8, Self.H.DIGEST_SIZE]
@@ -711,14 +566,7 @@ struct Rfc6979[H: Hash]:
     var _started: Bool
 
     def __init__(out self, private_key: Span[UInt8, _], hashed: Span[UInt8, _]):
-        """Seeds the generator (steps b to g).
-
-        Args:
-            private_key: The private key as fixed-width big-endian bytes,
-                `int2octets(x)`.
-            hashed: The digest reduced modulo the group order as fixed-width
-                big-endian bytes, `bits2octets(h1)`.
-        """
+        """Seeds the generator (steps b to g)."""
         self._key = Array[UInt8, Self.H.DIGEST_SIZE](fill=0x00)
         self._v = Array[UInt8, Self.H.DIGEST_SIZE](fill=0x01)
         self._started = False
@@ -748,13 +596,6 @@ struct Rfc6979[H: Hash]:
 
         Every call after the first one first applies the "try again" update
         `K = HMAC_K(V || 0x00)`, `V = HMAC_K(V)`.
-
-        Args:
-            count: The number of bytes wanted, the byte length of the group
-                order.
-
-        Returns:
-            `count` pseudorandom bytes.
         """
         if self._started:
             var empty = List[UInt8]()
@@ -780,19 +621,6 @@ def ec_private_key_from_bytes[
     `(c mod (order - 1)) + 1`, the method of FIPS 186-4 B.4.1. With at least
     64 bits more than the order has, the result is within `2^-64` of uniform
     on `[1, order - 1]`. Constant-time in the seed value.
-
-    Parameters:
-        n: The limb count of the curve.
-
-    Args:
-        curve: The curve.
-        seed: At least `8 * n + 8` uniformly random bytes.
-
-    Returns:
-        The private scalar as `8 * n` big-endian bytes.
-
-    Raises:
-        Error: If the seed is shorter than `8 * n + 8` bytes.
     """
     if len(seed) < 8 * n + 8:
         raise Error("EC key derivation needs at least 64 extra seed bits")
@@ -810,22 +638,7 @@ def ec_public_key[
 ](curve: Curve[n], private_key: Span[UInt8, _]) raises -> Array[
     UInt8, 16 * n + 1
 ]:
-    """Computes the public key of a private scalar in constant time.
-
-    Parameters:
-        n: The limb count of the curve.
-
-    Args:
-        curve: The curve.
-        private_key: The private scalar, `8 * n` big-endian bytes.
-
-    Returns:
-        The public point `d G` in uncompressed SEC 1 form.
-
-    Raises:
-        Error: If the scalar has the wrong length, is zero, or is not below
-            the group order.
-    """
+    """Computes the public key of a private scalar in constant time."""
     var d = Array[UInt64, n](fill=0)
     if not curve.decode_scalar(private_key, d):
         raise Error("invalid EC private key")
@@ -844,23 +657,6 @@ def ecdh[
 
     The scalar multiplication is constant-time. The peer key is public and
     is validated in variable time before use.
-
-    Parameters:
-        n: The limb count of the curve.
-
-    Args:
-        curve: The curve.
-        private_key: The private scalar, `8 * n` big-endian bytes.
-        peer_public_key: The peer's point in uncompressed SEC 1 form.
-
-    Returns:
-        The affine x-coordinate of the shared point, `8 * n` big-endian
-        bytes.
-
-    Raises:
-        Error: If the private scalar is invalid, if the peer key is not a
-            valid uncompressed point on the curve, or if the shared point is
-            the point at infinity.
     """
     var d = Array[UInt64, n](fill=0)
     if not curve.decode_scalar(private_key, d):
@@ -889,23 +685,6 @@ def ecdsa_sign[
     retry when a nonce candidate is out of range or gives `r = 0` or
     `s = 0`, which happens with negligible probability and reveals nothing
     about the nonce that is finally used.
-
-    Parameters:
-        n: The limb count of the curve.
-        H: The hash function for the HMAC_DRBG of RFC 6979. To reproduce
-            the RFC, use the hash that produced `digest`.
-
-    Args:
-        curve: The curve.
-        private_key: The private scalar, `8 * n` big-endian bytes.
-        digest: The message digest, of any length; reduced as in FIPS 186-4.
-
-    Returns:
-        The signature `r || s`, each half `8 * n` big-endian bytes.
-
-    Raises:
-        Error: If the private scalar has the wrong length, is zero, or is
-            not below the group order.
     """
     var d = Array[UInt64, n](fill=0)
     if not curve.decode_scalar(private_key, d):
@@ -952,21 +731,6 @@ def ecdsa_verify[
     """Verifies an ECDSA signature over a message digest.
 
     Variable-time: every input is public.
-
-    Parameters:
-        n: The limb count of the curve.
-
-    Args:
-        curve: The curve.
-        public_key: The signer's point in uncompressed SEC 1 form.
-        digest: The message digest, of any length; reduced as in FIPS 186-4.
-        signature: The signature `r || s`, each half `8 * n` big-endian
-            bytes.
-
-    Returns:
-        `True` if the signature is valid. Malformed input (a wrong length,
-        `r` or `s` outside `[1, order - 1]`, a point that is not on the
-        curve) gives `False`.
     """
     var size = 8 * n
     if len(signature) != 2 * size:

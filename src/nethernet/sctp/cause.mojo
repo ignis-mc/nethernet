@@ -38,28 +38,13 @@ struct ErrorCause(Copyable):
     """The cause-specific information."""
 
     def __init__(out self, code: UInt16, info: Span[UInt8, _]):
-        """Creates a cause, copying its information.
-
-        Args:
-            code: The cause code.
-            info: The cause-specific information.
-        """
+        """Creates a cause, copying its information."""
         self.code = code
         self.info = List[UInt8](info)
 
 
 def decode_causes(value: Span[UInt8, _]) raises -> List[ErrorCause]:
-    """Decodes the error causes of an ABORT or ERROR chunk.
-
-    Args:
-        value: The chunk value.
-
-    Returns:
-        The causes in wire order.
-
-    Raises:
-        Error: If a cause is truncated.
-    """
+    """Decodes the error causes of an ABORT or ERROR chunk."""
     var causes = List[ErrorCause]()
     var items = parse_tlvs(value, 0)
     for item in items:
@@ -85,22 +70,10 @@ def _encode_causes(
 def encode_abort(
     mut out: List[UInt8], t_bit: Bool, causes: Span[ErrorCause, _]
 ):
-    """Appends an ABORT chunk.
-
-    Args:
-        out: The buffer to append to.
-        t_bit: Whether the packet reflects the peer's verification tag
-            instead of carrying the tag the peer expects.
-        causes: The error causes to report.
-    """
+    """Appends an ABORT chunk."""
     _encode_causes(out, CHUNK_ABORT, UInt8(1) if t_bit else UInt8(0), causes)
 
 
 def encode_error(mut out: List[UInt8], causes: Span[ErrorCause, _]):
-    """Appends an ERROR chunk.
-
-    Args:
-        out: The buffer to append to.
-        causes: The error causes to report.
-    """
+    """Appends an ERROR chunk."""
     _encode_causes(out, CHUNK_ERROR, 0, causes)

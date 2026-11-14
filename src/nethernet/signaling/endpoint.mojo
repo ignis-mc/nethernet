@@ -149,11 +149,7 @@ struct EndpointStatus(Copyable):
         self.game_type = 0
 
     def encode(self) -> String:
-        """Formats the status as the JSON object go-nethernet serves.
-
-        Returns:
-            The JSON text.
-        """
+        """Formats the status as the JSON object go-nethernet serves."""
         return String(
             t"{{\"name\":{json_quote(self.name)},\"protocol\":{self.protocol},\"version\":{json_quote(self.version)},\"level\":{json_quote(self.level)},\"players\":{self.players},\"maxPlayers\":{self.max_players},\"gameType\":{self.game_type}}}"
         )
@@ -200,15 +196,7 @@ struct EndpointServer(Signaling):
     var _chunk: List[UInt8]
 
     def __init__(out self, bind_addr: SocketAddr) raises:
-        """Starts listening for HTTP connections.
-
-        Args:
-            bind_addr: The local TCP address; port 0 picks a free port.
-
-        Raises:
-            Error: If the socket cannot be bound or randomness is
-                unavailable.
-        """
+        """Starts listening for HTTP connections."""
         var listener = TcpListener(bind_addr)
         var id = String(random_u64())
         self._listener = listener^
@@ -219,14 +207,7 @@ struct EndpointServer(Signaling):
         self._chunk = List[UInt8](length=16384, fill=0)
 
     def local_addr(self) raises -> SocketAddr:
-        """Reads the bound TCP address.
-
-        Returns:
-            The local address, with the kernel-assigned port if 0 was asked.
-
-        Raises:
-            Error: If the kernel refuses.
-        """
+        """Reads the bound TCP address."""
         return self._listener.local_addr()
 
     def set_status(mut self, status: EndpointStatus):
@@ -234,18 +215,11 @@ struct EndpointServer(Signaling):
 
         Without a status the probe is answered with an empty body, which
         clients accept as well.
-
-        Args:
-            status: The server description.
         """
         self._status = status.encode()
 
     def pending_requests(self) -> Int:
-        """Counts HTTP connections that are open right now.
-
-        Returns:
-            The number of requests being read or awaiting an answer.
-        """
+        """Counts HTTP connections that are open right now."""
         return len(self._conns)
 
     # ===------------------------------------------------------------------=== #
@@ -253,46 +227,26 @@ struct EndpointServer(Signaling):
     # ===------------------------------------------------------------------=== #
 
     def network_id(self) -> String:
-        """Gets this server's network ID.
-
-        Returns:
-            A random decimal identifier; HTTP clients never see it.
-        """
+        """Gets this server's network ID."""
         return self._network_id.copy()
 
     def poll_fd(self) -> Int:
-        """Gets the listening socket's descriptor.
-
-        Returns:
-            The file descriptor.
-        """
+        """Gets the listening socket's descriptor."""
         return self._listener.fd()
 
     def trickle(self) -> Bool:
-        """Says that candidates must be embedded in the descriptions.
-
-        Returns:
-            `False`.
-        """
+        """Says that candidates must be embedded in the descriptions."""
         return False
 
     def add_poll_fds(self, mut set: PollSet):
-        """Adds the listening socket and every open HTTP connection.
-
-        Args:
-            set: The set to add the descriptors to.
-        """
+        """Adds the listening socket and every open HTTP connection."""
         _ = set.add(self._listener.fd())
         for i in range(len(self._conns)):
             if self._conns[i].state == _READING:
                 _ = set.add(self._conns[i].stream.fd())
 
     def poll_signal(mut self) -> Optional[Signal]:
-        """Takes the next offer received over HTTP.
-
-        Returns:
-            A `CONNECTREQUEST` signal, or `None`.
-        """
+        """Takes the next offer received over HTTP."""
         if len(self._signals) == 0:
             return None
         return self._signals.pop(0)
@@ -302,13 +256,6 @@ struct EndpointServer(Signaling):
 
         An answer becomes a `200` response with the SDP as its body; an
         error becomes a `500` response with the decimal error code.
-
-        Args:
-            signal: The answer or error for a pending join request.
-
-        Raises:
-            Error: If the signal is a candidate (HTTP signaling has no
-                trickle ICE) or no request is waiting for it.
         """
         if signal.kind != SIGNAL_ANSWER and signal.kind != SIGNAL_ERROR:
             raise Error("endpoint: only answers and errors can be signaled")
@@ -339,14 +286,7 @@ struct EndpointServer(Signaling):
         raise Error("endpoint: no pending request for this connection")
 
     def service(mut self, now_ms: Int) raises:
-        """Accepts connections, reads requests and expires stale ones.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
-
-        Raises:
-            Error: If the listening socket fails.
-        """
+        """Accepts connections, reads requests and expires stale ones."""
         while len(self._conns) < _MAX_CONNECTIONS:
             var accepted = self._listener.accept()
             if accepted is None:
@@ -369,11 +309,7 @@ struct EndpointServer(Signaling):
                 _ = self._conns.pop(i)
 
     def next_timeout(self) -> Int:
-        """Computes when `service()` next has a request to expire.
-
-        Returns:
-            An absolute monotonic time in milliseconds.
-        """
+        """Computes when `service()` next has a request to expire."""
         var t = _NEVER
         for i in range(len(self._conns)):
             t = min(t, self._conns[i].deadline_ms)
@@ -579,11 +515,7 @@ struct HttpResponse(Copyable):
     """The response body."""
 
     def __init__(out self, status: Int):
-        """Creates a response with an empty body.
-
-        Args:
-            status: The status code.
-        """
+        """Creates a response with an empty body."""
         self.status = status
         self.body = List[UInt8]()
 
@@ -654,14 +586,7 @@ struct EndpointClient(Signaling):
     var _chunk: List[UInt8]
 
     def __init__(out self, server: SocketAddr) raises:
-        """Creates a client for the server at an IPv4 address and port.
-
-        Args:
-            server: The HTTP address of the server.
-
-        Raises:
-            Error: If the kernel cannot supply randomness.
-        """
+        """Creates a client for the server at an IPv4 address and port."""
         var id = String(random_u64())
         self._server = server
         self._network_id = id
@@ -674,26 +599,11 @@ struct EndpointClient(Signaling):
         self._chunk = List[UInt8](length=16384, fill=0)
 
     def url(self) -> String:
-        """Gets the network ID to dial: the server's base URL.
-
-        Returns:
-            `http://<address>:<port>`.
-        """
+        """Gets the network ID to dial: the server's base URL."""
         return String(t"http://{self._server}")
 
     def probe(self, timeout_ms: Int) raises -> String:
-        """Sends the `GET /v1/join` probe and returns the response body.
-
-        Args:
-            timeout_ms: The longest time to wait for the whole exchange.
-
-        Returns:
-            The status JSON, or an empty string if the server sends none.
-
-        Raises:
-            Error: If the server is unreachable or answers with a status
-                outside 200 to 299.
-        """
+        """Sends the `GET /v1/join` probe and returns the response body."""
         var deadline = monotonic_ms() + timeout_ms
         var stream = TcpStream.connect(self._server, timeout_ms)
         var request = String(
@@ -726,37 +636,21 @@ struct EndpointClient(Signaling):
     # ===------------------------------------------------------------------=== #
 
     def network_id(self) -> String:
-        """Gets the client's network ID, sent in the request path.
-
-        Returns:
-            A random 64-bit number in decimal.
-        """
+        """Gets the client's network ID, sent in the request path."""
         return self._network_id.copy()
 
     def poll_fd(self) -> Int:
-        """Gets the descriptor of the request in flight.
-
-        Returns:
-            The file descriptor, or -1 if no request is in flight.
-        """
+        """Gets the descriptor of the request in flight."""
         if self._stream is None:
             return -1
         return self._stream.value().fd()
 
     def trickle(self) -> Bool:
-        """Says that candidates must be embedded in the descriptions.
-
-        Returns:
-            `False`.
-        """
+        """Says that candidates must be embedded in the descriptions."""
         return False
 
     def poll_signal(mut self) -> Optional[Signal]:
-        """Takes the answer or error the server responded with.
-
-        Returns:
-            A signal whose `network_id` is `url()`, or `None`.
-        """
+        """Takes the answer or error the server responded with."""
         if len(self._signals) == 0:
             return None
         return self._signals.pop(0)
@@ -766,13 +660,6 @@ struct EndpointClient(Signaling):
 
         Error signals are dropped, because the protocol has no way to carry
         them to the server.
-
-        Args:
-            signal: The offer, with every candidate embedded in its SDP.
-
-        Raises:
-            Error: If the signal is an answer or a candidate, a request is
-                already in flight, or the server cannot be reached.
         """
         if signal.kind == SIGNAL_ERROR:
             return
@@ -799,14 +686,7 @@ struct EndpointClient(Signaling):
         )
 
     def service(mut self, now_ms: Int) raises:
-        """Reads the response of the request in flight, if any.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
-
-        Raises:
-            Error: Never; failures are reported as error signals.
-        """
+        """Reads the response of the request in flight, if any."""
         if self._stream is None:
             return
         var eof = False

@@ -72,18 +72,7 @@ struct DiscoveryListener(Signaling):
         network_id: UInt64 = 0,
         broadcast: Optional[SocketAddr] = None,
     ) raises Errno:
-        """Binds the discovery socket.
-
-        Args:
-            bind_addr: The local address. Hosts use port 7551.
-            network_id: This end's network ID; 0 picks a random one.
-            broadcast: Where to send requests. By default a listener bound to
-                port 7551 does not broadcast, and any other listener
-                broadcasts to `255.255.255.255:7551`.
-
-        Raises:
-            Errno: If the socket cannot be created or bound.
-        """
+        """Binds the discovery socket."""
         self._socket = UdpSocket(bind_addr, reuse_addr=True)
         self._socket.set_broadcast(True)
         self._network_id = network_id
@@ -103,22 +92,11 @@ struct DiscoveryListener(Signaling):
         self._buf = List[UInt8](length=65536, fill=0)
 
     def local_addr(self) raises Errno -> SocketAddr:
-        """Reads the bound address.
-
-        Returns:
-            The local address of the discovery socket.
-
-        Raises:
-            Errno: If the kernel refuses.
-        """
+        """Reads the bound address."""
         return self._socket.local_addr()
 
     def id(self) -> UInt64:
-        """Gets the numeric network ID.
-
-        Returns:
-            The local network ID.
-        """
+        """Gets the numeric network ID."""
         return self._network_id
 
     def disable_broadcast(mut self):
@@ -126,20 +104,11 @@ struct DiscoveryListener(Signaling):
         self._broadcast = None
 
     def set_server_data(mut self, data: ServerData):
-        """Sets the world description sent in response to requests.
-
-        Args:
-            data: The description to announce.
-        """
+        """Sets the world description sent in response to requests."""
         self._server_data = data.encode()
 
     def responses(self) -> List[DiscoveredServer]:
-        """Lists the worlds that answered recently.
-
-        Returns:
-            One entry per network ID seen within `RESPONSE_LIFETIME_MS` as of
-            the last `service()` call.
-        """
+        """Lists the worlds that answered recently."""
         var out = List[DiscoveredServer]()
         for entry in self._responses.items():
             out.append(entry.value.copy())
@@ -150,11 +119,6 @@ struct DiscoveryListener(Signaling):
 
         Addresses are normally learned from responses and messages; this is
         for callers that know the address by other means.
-
-        Args:
-            network_id: The peer's network ID.
-            addr: The peer's discovery address.
-            now_ms: The current monotonic time in milliseconds.
         """
         self._peers[network_id] = _Peer(addr, now_ms)
 
@@ -163,39 +127,19 @@ struct DiscoveryListener(Signaling):
     # ===------------------------------------------------------------------=== #
 
     def network_id(self) -> String:
-        """Gets the network ID other peers use to reach this end.
-
-        Returns:
-            The local network ID in decimal.
-        """
+        """Gets the network ID other peers use to reach this end."""
         return String(self._network_id)
 
     def poll_fd(self) -> Int:
-        """Gets the discovery socket's descriptor.
-
-        Returns:
-            The file descriptor.
-        """
+        """Gets the discovery socket's descriptor."""
         return self._socket.fd()
 
     def trickle(self) -> Bool:
-        """Says that candidates are signaled individually on the LAN.
-
-        Returns:
-            `True`.
-        """
+        """Says that candidates are signaled individually on the LAN."""
         return True
 
     def send_signal(mut self, signal: Signal) raises:
-        """Sends a signal to a peer whose address is known.
-
-        Args:
-            signal: The signal; `network_id` is the recipient in decimal.
-
-        Raises:
-            Error: If the network ID is not a number or no address is known
-                for it.
-        """
+        """Sends a signal to a peer whose address is known."""
         var recipient = UInt64(0)
         var digits = signal.network_id.as_bytes()
         if len(digits) == 0 or len(digits) > 20:
@@ -214,24 +158,13 @@ struct DiscoveryListener(Signaling):
         _ = self._socket.send_to(Span(datagram), addr)
 
     def poll_signal(mut self) -> Optional[Signal]:
-        """Takes the next received signal.
-
-        Returns:
-            A signal whose `network_id` is the sender in decimal, or `None`.
-        """
+        """Takes the next received signal."""
         if len(self._signals) == 0:
             return None
         return self._signals.pop(0)
 
     def service(mut self, now_ms: Int) raises:
-        """Reads pending datagrams, answers requests and broadcasts.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
-
-        Raises:
-            Error: If the socket fails.
-        """
+        """Reads pending datagrams, answers requests and broadcasts."""
         if case .Some(target) = self._broadcast:
             if now_ms >= self._next_broadcast_ms:
                 self._next_broadcast_ms = now_ms + BROADCAST_INTERVAL_MS
@@ -253,12 +186,7 @@ struct DiscoveryListener(Signaling):
         self._expire(now_ms)
 
     def next_timeout(self) -> Int:
-        """Computes when `service()` next has periodic work.
-
-        Returns:
-            The absolute time of the next broadcast, or a very large value
-            if this listener does not broadcast.
-        """
+        """Computes when `service()` next has periodic work."""
         if self._broadcast is None:
             return 0x3FFF_FFFF_FFFF_FFFF
         return self._next_broadcast_ms

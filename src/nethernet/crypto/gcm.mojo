@@ -213,14 +213,7 @@ struct AesGcm(Copyable):
     var _ghash: _Ghash
 
     def __init__(out self, key: Span[UInt8, _]) raises:
-        """Expands a key.
-
-        Args:
-            key: The 16, 24 or 32 byte AES key.
-
-        Raises:
-            Error: If the key has any other length.
-        """
+        """Expands a key."""
         self._aes = Aes(key)
         var zero = Array[UInt8, 16](fill=0)
         self._ghash = _Ghash(self._aes.encrypt_block(zero), GCM_HARDWARE)
@@ -231,15 +224,6 @@ struct AesGcm(Copyable):
 
         The result behaves exactly like `AesGcm(key)` but never uses AES-NI or
         PCLMULQDQ, even when the target has them.
-
-        Args:
-            key: The 16, 24 or 32 byte AES key.
-
-        Returns:
-            The key.
-
-        Raises:
-            Error: If the key has any other length.
         """
         var gcm = Self(key)
         gcm._aes = Aes.portable(key)
@@ -274,18 +258,7 @@ struct AesGcm(Copyable):
         plaintext: Span[UInt8, _],
         mut out: List[UInt8],
     ) raises:
-        """Encrypts and authenticates a message.
-
-        Args:
-            nonce: The 12-byte nonce, unique for this key.
-            aad: Additional data to authenticate but not encrypt.
-            plaintext: The message.
-            out: Receives the ciphertext, which is as long as `plaintext`,
-                followed by the 16-byte tag. Existing contents are kept.
-
-        Raises:
-            Error: If the nonce is not 12 bytes or the message is too long.
-        """
+        """Encrypts and authenticates a message."""
         if len(nonce) != GCM_NONCE_LEN:
             raise Error("gcm: nonce must be 12 bytes")
         var n = len(plaintext)
@@ -309,17 +282,6 @@ struct AesGcm(Copyable):
 
         The tag is checked in constant time before any plaintext is produced.
         When this raises, `out` is left unchanged.
-
-        Args:
-            nonce: The 12-byte nonce used to seal the message.
-            aad: The additional data that was authenticated with it.
-            sealed: The ciphertext followed by the 16-byte tag.
-            out: Receives the plaintext. Existing contents are kept.
-
-        Raises:
-            Error: If the nonce is not 12 bytes or the message is too long, or
-                "gcm: authentication failed" if `sealed` is shorter than a
-                tag or the tag does not match.
         """
         if len(nonce) != GCM_NONCE_LEN:
             raise Error("gcm: nonce must be 12 bytes")

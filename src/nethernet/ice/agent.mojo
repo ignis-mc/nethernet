@@ -112,16 +112,7 @@ struct IceAgent(Movable):
         tie_breaker: UInt64,
         seed: UInt64,
     ):
-        """Creates an agent.
-
-        Args:
-            controlling: `True` for the offerer (the dialer), `False` for the
-                answerer.
-            local_ufrag: The local username fragment sent in the SDP.
-            local_pwd: The local password sent in the SDP.
-            tie_breaker: A random value used to resolve role conflicts.
-            seed: A random value that seeds transaction identifiers.
-        """
+        """Creates an agent."""
         self._controlling = controlling
         self._tie_breaker = tie_breaker
         self._local_ufrag = String(local_ufrag)
@@ -141,12 +132,7 @@ struct IceAgent(Movable):
     # ===------------------------------------------------------------------=== #
 
     def set_remote_credentials(mut self, ufrag: StringSpan, pwd: StringSpan):
-        """Records the peer's username fragment and password from its SDP.
-
-        Args:
-            ufrag: The remote username fragment.
-            pwd: The remote password.
-        """
+        """Records the peer's username fragment and password from its SDP."""
         self._remote_ufrag = String(ufrag)
         self._remote_pwd = String(pwd)
 
@@ -154,10 +140,6 @@ struct IceAgent(Movable):
         """Adds a remote transport address to check.
 
         Duplicates are ignored, and so are candidates beyond a fixed cap.
-
-        Args:
-            addr: The remote candidate address.
-            now_ms: The current monotonic time in milliseconds.
         """
         _ = self._pair_for(addr, now_ms)
 
@@ -166,9 +148,6 @@ struct IceAgent(Movable):
 
         Call once the remote credentials are known. Checks go out on the next
         `handle_timeout()`.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
         """
         if self._state == ICE_STATE_NEW:
             self._state = ICE_STATE_CHECKING
@@ -182,48 +161,27 @@ struct IceAgent(Movable):
     # ===------------------------------------------------------------------=== #
 
     def state(self) -> Int:
-        """Gets the connection state.
-
-        Returns:
-            One of the `ICE_STATE_*` constants.
-        """
+        """Gets the connection state."""
         return self._state
 
     def is_controlling(self) -> Bool:
-        """Checks the current role, which a role conflict can change.
-
-        Returns:
-            `True` if the agent is controlling.
-        """
+        """Checks the current role, which a role conflict can change."""
         return self._controlling
 
     def selected(self) -> Optional[SocketAddr]:
-        """Gets the remote address of the selected candidate pair.
-
-        Returns:
-            The address to send DTLS to, or `None` before selection.
-        """
+        """Gets the remote address of the selected candidate pair."""
         if self._selected < 0:
             return None
         return self._pairs[self._selected].remote
 
     def rtt_ms(self) -> Int:
-        """Gets the latest round-trip time measured on the selected pair.
-
-        Returns:
-            The round-trip time in milliseconds, or -1 if not measured.
-        """
+        """Gets the latest round-trip time measured on the selected pair."""
         if self._selected < 0:
             return -1
         return self._pairs[self._selected].rtt_ms
 
     def next_timeout(self) -> Int:
-        """Computes when `handle_timeout()` next has work to do.
-
-        Returns:
-            An absolute monotonic time in milliseconds; a very large value if
-            the agent is idle.
-        """
+        """Computes when `handle_timeout()` next has work to do."""
         if self._state == ICE_STATE_NEW or self._state == ICE_STATE_FAILED:
             return _NEVER
         var t: Int
@@ -241,11 +199,7 @@ struct IceAgent(Movable):
         return t
 
     def poll_transmit(mut self) -> Optional[IceTransmit]:
-        """Takes the next datagram to send.
-
-        Returns:
-            A datagram and its destination, or `None` when nothing is queued.
-        """
+        """Takes the next datagram to send."""
         if len(self._out) == 0:
             return None
         return self._out.pop(0)
@@ -258,10 +212,6 @@ struct IceAgent(Movable):
         """Records that a non-STUN packet arrived from the selected address.
 
         Any traffic on the selected pair proves the path is alive.
-
-        Args:
-            src: The source address of the packet.
-            now_ms: The current monotonic time in milliseconds.
         """
         if self._selected >= 0 and self._pairs[self._selected].remote == src:
             self._touch(now_ms)
@@ -272,11 +222,6 @@ struct IceAgent(Movable):
         """Processes one inbound STUN datagram.
 
         Malformed or unauthenticated messages are dropped silently.
-
-        Args:
-            data: The datagram.
-            src: The source address of the datagram.
-            now_ms: The current monotonic time in milliseconds.
         """
         if not is_stun(data):
             return
@@ -294,11 +239,7 @@ struct IceAgent(Movable):
             return
 
     def handle_timeout(mut self, now_ms: Int):
-        """Sends due checks and keepalives and updates liveness.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
-        """
+        """Sends due checks and keepalives and updates liveness."""
         if self._state == ICE_STATE_NEW or self._state == ICE_STATE_FAILED:
             return
         if self._selected >= 0:

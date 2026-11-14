@@ -58,13 +58,7 @@ struct ChannelOpen(Copyable):
     def __init__(
         out self, channel_type: UInt8, reliability: UInt32, label: StringSpan
     ):
-        """Creates an open request with the default priority.
-
-        Args:
-            channel_type: One of the `CHANNEL_*` constants.
-            reliability: The reliability parameter.
-            label: The channel label.
-        """
+        """Creates an open request with the default priority."""
         self.channel_type = channel_type
         self.priority = _DEFAULT_PRIORITY
         self.reliability = reliability
@@ -73,51 +67,28 @@ struct ChannelOpen(Copyable):
 
     @staticmethod
     def reliable() -> ChannelOpen:
-        """Describes NetherNet's `ReliableDataChannel`.
-
-        Returns:
-            The open request for the ordered, reliable channel.
-        """
+        """Describes NetherNet's `ReliableDataChannel`."""
         return ChannelOpen(CHANNEL_RELIABLE, 0, RELIABLE_LABEL)
 
     @staticmethod
     def unreliable() -> ChannelOpen:
-        """Describes NetherNet's `UnreliableDataChannel`.
-
-        Returns:
-            The open request for the unordered channel with no
-            retransmissions.
-        """
+        """Describes NetherNet's `UnreliableDataChannel`."""
         return ChannelOpen(
             CHANNEL_PARTIAL_RELIABLE_REXMIT_UNORDERED, 0, UNRELIABLE_LABEL
         )
 
     def is_unordered(self) -> Bool:
-        """Checks whether messages on the channel may arrive out of order.
-
-        Returns:
-            `True` if the unordered bit of the channel type is set.
-        """
+        """Checks whether messages on the channel may arrive out of order."""
         return (self.channel_type & 0x80) != 0
 
     def max_retransmits(self) -> Int:
-        """Gets the retransmission limit for sending on this channel.
-
-        Returns:
-            The limit for retransmission-limited channels, or -1 for fully
-            reliable channels (and for lifetime-limited ones, which this
-            library treats as reliable).
-        """
+        """Gets the retransmission limit for sending on this channel."""
         if (self.channel_type & 0x7F) == CHANNEL_PARTIAL_RELIABLE_REXMIT:
             return Int(self.reliability)
         return -1
 
     def encode(self, mut out: List[UInt8]):
-        """Appends the encoded message.
-
-        Args:
-            out: The buffer to append to.
-        """
+        """Appends the encoded message."""
         put_u8(out, DCEP_OPEN)
         put_u8(out, self.channel_type)
         put_u16(out, self.priority)
@@ -129,17 +100,7 @@ struct ChannelOpen(Copyable):
 
     @staticmethod
     def decode(data: Span[UInt8, _]) raises -> ChannelOpen:
-        """Decodes a DATA_CHANNEL_OPEN message.
-
-        Args:
-            data: The whole DCEP message.
-
-        Returns:
-            The decoded message.
-
-        Raises:
-            Error: If the message is not an OPEN or its lengths are wrong.
-        """
+        """Decodes a DATA_CHANNEL_OPEN message."""
         var r = Reader(data)
         if r.u8() != DCEP_OPEN:
             raise Error("DCEP: not a DATA_CHANNEL_OPEN message")
@@ -161,21 +122,10 @@ struct ChannelOpen(Copyable):
 
 
 def is_dcep_ack(data: Span[UInt8, _]) -> Bool:
-    """Checks whether a DCEP message is a DATA_CHANNEL_ACK.
-
-    Args:
-        data: The whole DCEP message.
-
-    Returns:
-        `True` if the first byte is the ACK type.
-    """
+    """Checks whether a DCEP message is a DATA_CHANNEL_ACK."""
     return len(data) >= 1 and data[0] == DCEP_ACK
 
 
 def encode_dcep_ack(mut out: List[UInt8]):
-    """Appends a DATA_CHANNEL_ACK message.
-
-    Args:
-        out: The buffer to append to.
-    """
+    """Appends a DATA_CHANNEL_ACK message."""
     put_u8(out, DCEP_ACK)

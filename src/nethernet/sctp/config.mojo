@@ -83,11 +83,6 @@ struct SctpConfig(Copyable):
         message limit 262144 bytes, 65535 streams each way, and the timers
         follow RFC 9260 (RTO 1 s initial and minimum, 60 s maximum, 8 INIT
         retransmissions, 10 data retransmissions).
-
-        Args:
-            local_tag: The local initiate tag: random and non-zero.
-            initial_tsn: The first TSN to send: random.
-            cookie_secret: Random bytes that authenticate State Cookies.
         """
         self.local_port = 5000
         self.remote_port = 5000
@@ -126,11 +121,7 @@ struct SctpEvent(Copyable):
     """Why the association closed; empty for other events."""
 
     def __init__(out self, kind: Int):
-        """Creates an event with every other field empty.
-
-        Args:
-            kind: One of the `SCTP_EVENT_*` values.
-        """
+        """Creates an event with every other field empty."""
         self.kind = kind
         self.stream_id = 0
         self.ppid = 0

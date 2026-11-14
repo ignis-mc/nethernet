@@ -163,11 +163,7 @@ struct Sha256(Hash):
         self._state[7] += h
 
     def update(mut self, data: Span[UInt8, _]):
-        """Absorbs more input.
-
-        Args:
-            data: The bytes to hash.
-        """
+        """Absorbs more input."""
         self._total_len += UInt64(len(data))
         for b in data:
             self._block[self._block_len] = b
@@ -180,9 +176,6 @@ struct Sha256(Hash):
         """Pads the input and produces the digest.
 
         The hasher must not be used again afterwards.
-
-        Returns:
-            The 32-byte digest.
         """
         var bit_len = self._total_len * 8
         self._block[self._block_len] = 0x80
@@ -209,14 +202,7 @@ struct Sha256(Hash):
 
 
 def sha256(data: Span[UInt8, _]) -> Array[UInt8, 32]:
-    """Computes the SHA-256 digest of `data`.
-
-    Args:
-        data: The bytes to hash.
-
-    Returns:
-        The 32-byte digest.
-    """
+    """Computes the SHA-256 digest of `data`."""
     var h = Sha256()
     h.update(data)
     return h.finish()

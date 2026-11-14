@@ -218,20 +218,13 @@ struct Sha512(Hash):
         )
 
     def update(mut self, data: Span[UInt8, _]):
-        """Absorbs more input.
-
-        Args:
-            data: The bytes to hash.
-        """
+        """Absorbs more input."""
         self._core.update(data)
 
     def finish(mut self) -> Array[UInt8, 64]:
         """Pads the input and produces the digest.
 
         The hasher must not be used again afterwards.
-
-        Returns:
-            The 64-byte digest.
         """
         self._core.finish()
         var out = Array[UInt8, 64](fill=0)
@@ -266,20 +259,13 @@ struct Sha384(Hash):
         )
 
     def update(mut self, data: Span[UInt8, _]):
-        """Absorbs more input.
-
-        Args:
-            data: The bytes to hash.
-        """
+        """Absorbs more input."""
         self._core.update(data)
 
     def finish(mut self) -> Array[UInt8, 48]:
         """Pads the input and produces the digest.
 
         The hasher must not be used again afterwards.
-
-        Returns:
-            The 48-byte digest.
         """
         self._core.finish()
         var out = Array[UInt8, 48](fill=0)
@@ -289,28 +275,14 @@ struct Sha384(Hash):
 
 
 def sha512(data: Span[UInt8, _]) -> Array[UInt8, 64]:
-    """Computes the SHA-512 digest of `data`.
-
-    Args:
-        data: The bytes to hash.
-
-    Returns:
-        The 64-byte digest.
-    """
+    """Computes the SHA-512 digest of `data`."""
     var h = Sha512()
     h.update(data)
     return h.finish()
 
 
 def sha384(data: Span[UInt8, _]) -> Array[UInt8, 48]:
-    """Computes the SHA-384 digest of `data`.
-
-    Args:
-        data: The bytes to hash.
-
-    Returns:
-        The 48-byte digest.
-    """
+    """Computes the SHA-384 digest of `data`."""
     var h = Sha384()
     h.update(data)
     return h.finish()

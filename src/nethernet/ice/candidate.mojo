@@ -38,14 +38,7 @@ struct IceCandidate(Copyable):
         addr: SocketAddr,
         kind: StringSpan,
     ):
-        """Creates a component-1 UDP candidate.
-
-        Args:
-            foundation: The foundation string.
-            priority: The candidate priority.
-            addr: The transport address.
-            kind: The candidate type.
-        """
+        """Creates a component-1 UDP candidate."""
         self.foundation = String(foundation)
         self.component = 1
         self.priority = priority
@@ -59,27 +52,13 @@ struct IceCandidate(Copyable):
 
         The foundation is the decimal CRC-32 of the type, address and
         transport, which is how pion derives it.
-
-        Args:
-            addr: The bound local address.
-
-        Returns:
-            The host candidate.
         """
         var seed = String(t"host{addr.ip_string()}udp")
         var foundation = String(crc32(seed.as_bytes()))
         return IceCandidate(foundation, ICE_HOST_PRIORITY, addr, "host")
 
     def attribute_value(self, ufrag: StringSpan, network_id: Int) -> String:
-        """Formats the candidate as an SDP attribute value.
-
-        Args:
-            ufrag: The local ICE username fragment.
-            network_id: The index of the candidate among the local ones.
-
-        Returns:
-            The text that follows `a=candidate:`.
-        """
+        """Formats the candidate as an SDP attribute value."""
         var out = String(
             t"{self.foundation} {self.component} udp {self.priority}"
             t" {self.addr.ip_string()} {self.addr.port} typ {self.kind}"
@@ -93,15 +72,7 @@ struct IceCandidate(Copyable):
         return out
 
     def signal_value(self, ufrag: StringSpan, network_id: Int) -> String:
-        """Formats the candidate as `CANDIDATEADD` signal data.
-
-        Args:
-            ufrag: The local ICE username fragment.
-            network_id: The index of the candidate among the local ones.
-
-        Returns:
-            The candidate line with its `candidate:` prefix.
-        """
+        """Formats the candidate as `CANDIDATEADD` signal data."""
         return "candidate:" + self.attribute_value(ufrag, network_id)
 
 
@@ -139,16 +110,6 @@ def parse_candidate(text: StringSpan) raises -> IceCandidate:
 
     Accepts the forms `a=candidate:…`, `candidate:…` and the bare attribute
     value. Unknown extension pairs are ignored.
-
-    Args:
-        text: The candidate line.
-
-    Returns:
-        The parsed candidate.
-
-    Raises:
-        Error: If the line is malformed, or the candidate is not a UDP
-            candidate with an IPv4 address (TCP, IPv6 and mDNS hostnames).
     """
     var s = text.strip()
     if s.startswith("a="):

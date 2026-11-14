@@ -45,15 +45,7 @@ def put_record_header(
     seq: UInt64,
     length: Int,
 ):
-    """Appends a 13-byte DTLS 1.2 record header.
-
-    Args:
-        out: The buffer to append to.
-        content_type: The record content type.
-        epoch: The epoch.
-        seq: The 48-bit record sequence number.
-        length: The length of the record body that follows.
-    """
+    """Appends a 13-byte DTLS 1.2 record header."""
     put_u8(out, content_type)
     put_u16(out, DTLS_VERSION_1_2)
     put_u16(out, epoch)
@@ -68,15 +60,7 @@ def put_plain_record(
     seq: UInt64,
     body: Span[UInt8, _],
 ):
-    """Appends an unprotected record.
-
-    Args:
-        out: The buffer to append to.
-        content_type: The record content type.
-        epoch: The epoch, 0 before keys are active.
-        seq: The 48-bit record sequence number.
-        body: The record body.
-    """
+    """Appends an unprotected record."""
     put_record_header(out, content_type, epoch, seq, len(body))
     put_bytes(out, body)
 
@@ -96,15 +80,7 @@ struct RecordCipher(Movable):
     var _iv: List[UInt8]
 
     def __init__(out self, key: Span[UInt8, _], iv: Span[UInt8, _]) raises:
-        """Creates the cipher from key-block material.
-
-        Args:
-            key: The 16-byte write key.
-            iv: The 4-byte implicit IV.
-
-        Raises:
-            Error: If the key length is not valid for AES.
-        """
+        """Creates the cipher from key-block material."""
         self._aead = OwnedPointer(AesGcm(key))
         self._iv = List[UInt8](iv)
 
@@ -127,18 +103,7 @@ struct RecordCipher(Movable):
         seq: UInt64,
         plaintext: Span[UInt8, _],
     ) raises:
-        """Appends a protected record, header included.
-
-        Args:
-            out: The buffer to append to.
-            content_type: The record content type.
-            epoch: The epoch the keys belong to.
-            seq: The 48-bit record sequence number; never reuse one.
-            plaintext: The record payload.
-
-        Raises:
-            Error: If encryption fails.
-        """
+        """Appends a protected record, header included."""
         put_record_header(
             out, content_type, epoch, seq, len(plaintext) + AEAD_OVERHEAD
         )
@@ -156,20 +121,7 @@ struct RecordCipher(Movable):
         seq: UInt64,
         body: Span[UInt8, _],
     ) raises -> List[UInt8]:
-        """Authenticates and decrypts a protected record body.
-
-        Args:
-            content_type: The content type from the record header.
-            epoch: The epoch from the record header.
-            seq: The sequence number from the record header.
-            body: The record body: explicit nonce, ciphertext and tag.
-
-        Returns:
-            The plaintext payload.
-
-        Raises:
-            Error: If the body is too short or authentication fails.
-        """
+        """Authenticates and decrypts a protected record body."""
         if len(body) < AEAD_OVERHEAD:
             raise Error("dtls: protected record too short")
         var nonce = self._iv.copy()
@@ -196,14 +148,7 @@ struct ReplayWindow(Copyable):
         self._any = False
 
     def is_fresh(self, seq: UInt64) -> Bool:
-        """Checks whether a sequence number is new and inside the window.
-
-        Args:
-            seq: The record sequence number.
-
-        Returns:
-            `False` for duplicates and for numbers older than the window.
-        """
+        """Checks whether a sequence number is new and inside the window."""
         if not self._any or seq > self._highest:
             return True
         var diff = self._highest - seq
@@ -212,11 +157,7 @@ struct ReplayWindow(Copyable):
         return (self._bitmap & (UInt64(1) << diff)) == 0
 
     def mark(mut self, seq: UInt64):
-        """Records a sequence number as seen, after authentication succeeded.
-
-        Args:
-            seq: The record sequence number.
-        """
+        """Records a sequence number as seen, after authentication succeeded."""
         if not self._any:
             self._any = True
             self._highest = seq

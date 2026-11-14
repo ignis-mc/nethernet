@@ -58,12 +58,7 @@ struct ReconfigParam(Copyable):
     """Add-streams requests only: the number of new streams."""
 
     def __init__(out self, kind: UInt16, request_seq: UInt32):
-        """Creates a parameter with every other field zero.
-
-        Args:
-            kind: The parameter type.
-            request_seq: The request or response sequence number.
-        """
+        """Creates a parameter with every other field zero."""
         self.kind = kind
         self.request_seq = request_seq
         self.response_seq = 0
@@ -73,12 +68,7 @@ struct ReconfigParam(Copyable):
         self.count = 0
 
     def encode(self, mut out: List[UInt8], chunk_start: Int):
-        """Appends the parameter inside a RE-CONFIG chunk being built.
-
-        Args:
-            out: The buffer to append to.
-            chunk_start: The offset of the enclosing chunk header.
-        """
+        """Appends the parameter inside a RE-CONFIG chunk being built."""
         var p = begin_param(out, chunk_start, self.kind)
         put_u32(out, self.request_seq)
         if self.kind == PARAM_OUTGOING_RESET:
@@ -106,17 +96,7 @@ def outgoing_reset_request(
     last_tsn: UInt32,
     streams: Span[UInt16, _],
 ) -> ReconfigParam:
-    """Builds an Outgoing SSN Reset Request parameter.
-
-    Args:
-        request_seq: The sender's request sequence number.
-        response_seq: The last request sequence number seen from the peer.
-        last_tsn: The sender's last assigned TSN.
-        streams: The outgoing streams to reset.
-
-    Returns:
-        The parameter.
-    """
+    """Builds an Outgoing SSN Reset Request parameter."""
     var p = ReconfigParam(PARAM_OUTGOING_RESET, request_seq)
     p.response_seq = response_seq
     p.last_tsn = last_tsn
@@ -125,27 +105,14 @@ def outgoing_reset_request(
 
 
 def reconfig_response(response_seq: UInt32, result: UInt32) -> ReconfigParam:
-    """Builds a Re-configuration Response parameter.
-
-    Args:
-        response_seq: The sequence number of the request being answered.
-        result: One of the `RECONFIG_RESULT_*` values.
-
-    Returns:
-        The parameter.
-    """
+    """Builds a Re-configuration Response parameter."""
     var p = ReconfigParam(PARAM_RECONFIG_RESPONSE, response_seq)
     p.result = result
     return p^
 
 
 def encode_reconfig(mut out: List[UInt8], params: Span[ReconfigParam, _]):
-    """Appends a RE-CONFIG chunk.
-
-    Args:
-        out: The buffer to append to.
-        params: The parameters, at most two per RFC 6525.
-    """
+    """Appends a RE-CONFIG chunk."""
     var start = begin_chunk(out, CHUNK_RECONFIG, 0)
     for p in params:
         p.encode(out, start)
@@ -156,15 +123,6 @@ def decode_reconfig(value: Span[UInt8, _]) raises -> List[ReconfigParam]:
     """Decodes the value of a RE-CONFIG chunk.
 
     Parameters of unknown type are returned with only `kind` set.
-
-    Args:
-        value: The chunk value.
-
-    Returns:
-        The parameters in wire order.
-
-    Raises:
-        Error: If a parameter is truncated.
     """
     var params = List[ReconfigParam]()
     var items = parse_tlvs(value, 0)

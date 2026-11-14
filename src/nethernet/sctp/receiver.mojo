@@ -55,15 +55,7 @@ struct Receiver(Movable):
         max_tsn_gap: Int,
         inbound_streams: Int,
     ):
-        """Creates a receiver that waits for the peer's initial TSN.
-
-        Args:
-            a_rwnd: The receive window to advertise, in bytes.
-            max_message_size: The largest message to reassemble.
-            mtu: The largest packet to emit, which bounds a SACK.
-            max_tsn_gap: How far past the cumulative TSN chunks are kept.
-            inbound_streams: The number of inbound streams offered.
-        """
+        """Creates a receiver that waits for the peer's initial TSN."""
         self._tracker = TsnTracker(0, max_tsn_gap)
         self._reasm = Reassembly(max_message_size)
         self._dups = List[UInt32]()
@@ -75,55 +67,27 @@ struct Receiver(Movable):
         self._in_streams = inbound_streams
 
     def set_peer(mut self, initial_tsn: UInt32, inbound_streams: Int):
-        """Starts over at the peer's initial TSN.
-
-        Args:
-            initial_tsn: The initial TSN from the peer's INIT or INIT ACK.
-            inbound_streams: The negotiated number of inbound streams.
-        """
+        """Starts over at the peer's initial TSN."""
         self._tracker = TsnTracker(initial_tsn - 1, self._max_tsn_gap)
         self._in_streams = inbound_streams
 
     def cumulative_tsn(self) -> UInt32:
-        """Returns the highest TSN received with no gap before it.
-
-        Returns:
-            The cumulative TSN.
-        """
+        """Returns the highest TSN received with no gap before it."""
         return self._tracker.cumulative_tsn()
 
     def buffered(self) -> Int:
-        """Returns the buffer space taken by stored fragments.
-
-        Returns:
-            The cost of everything held for reassembly or ordering.
-        """
+        """Returns the buffer space taken by stored fragments."""
         return self._reasm.cost()
 
     def advertised_rwnd(self, unread: Int) -> Int:
-        """Computes the receive window to advertise.
-
-        Args:
-            unread: Bytes of delivered messages the user has not read yet.
-
-        Returns:
-            The free receive buffer in bytes, never negative.
-        """
+        """Computes the receive window to advertise."""
         var free = self._window - self._reasm.cost() - unread
         if free < 0:
             return 0
         return free
 
     def window_update_due(self, unread: Int) -> Bool:
-        """Checks whether the window reopened enough to tell the peer.
-
-        Args:
-            unread: Bytes of delivered messages the user has not read yet.
-
-        Returns:
-            `True` if the last SACK advertised less than a quarter of the
-            window and at least another quarter has become free since.
-        """
+        """Checks whether the window reopened enough to tell the peer."""
         var quarter = self._window // 4
         return self._last_rwnd < quarter and (
             self.advertised_rwnd(unread) - self._last_rwnd >= quarter
@@ -136,20 +100,7 @@ struct Receiver(Movable):
         events_full: Bool,
         mut out: List[SctpMessage],
     ) raises -> Int:
-        """Processes one DATA chunk with a non-empty payload.
-
-        Args:
-            chunk: The decoded chunk.
-            unread: Bytes of delivered messages the user has not read yet.
-            events_full: Whether the user's event queue is at its limit.
-            out: The list that completed messages are appended to.
-
-        Returns:
-            One of the `RECEIVE_*` values.
-
-        Raises:
-            Error: If the internal bookkeeping is inconsistent.
-        """
+        """Processes one DATA chunk with a non-empty payload."""
         var kind = self._tracker.classify(chunk.tsn)
         if kind == TSN_DUPLICATE:
             if len(self._dups) < _MAX_DUPLICATE_REPORTS:
@@ -190,13 +141,6 @@ struct Receiver(Movable):
         A FORWARD-TSN at or behind the cumulative TSN leaves it alone but
         still names messages the sender gave up, so the buffers are cleaned
         either way.
-
-        Args:
-            fwd: The decoded chunk.
-            out: The list that released messages are appended to.
-
-        Raises:
-            Error: If the internal bookkeeping is inconsistent.
         """
         self._tracker.forward(fwd.new_cumulative_tsn)
         self._reasm.forward(
@@ -212,12 +156,6 @@ struct Receiver(Movable):
 
         The pending duplicate reports move into the SACK; if it is not sent
         after all, hand them back with `keep_duplicates()`.
-
-        Args:
-            unread: Bytes of delivered messages the user has not read yet.
-
-        Returns:
-            A SACK that fits one packet.
         """
         var rwnd = self.advertised_rwnd(unread)
         self._last_rwnd = rwnd
@@ -231,22 +169,11 @@ struct Receiver(Movable):
         return sack^
 
     def keep_duplicates(mut self, mut sack: SackChunk):
-        """Takes the duplicate reports back from a SACK that was not sent.
-
-        Args:
-            sack: The SACK returned by `build_sack()`.
-        """
+        """Takes the duplicate reports back from a SACK that was not sent."""
         swap(self._dups, sack.duplicates)
 
     def reset_stream(mut self, stream_id: UInt16) raises:
-        """Restarts an inbound stream at sequence number 0.
-
-        Args:
-            stream_id: The inbound stream the peer reset.
-
-        Raises:
-            Error: If the internal bookkeeping is inconsistent.
-        """
+        """Restarts an inbound stream at sequence number 0."""
         self._reasm.reset_stream(stream_id)
 
     def clear(mut self):

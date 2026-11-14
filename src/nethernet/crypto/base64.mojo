@@ -84,54 +84,20 @@ def _decode(text: StringSpan, url: Bool) raises -> List[UInt8]:
 
 
 def base64_encode(data: Span[UInt8, _]) -> String:
-    """Encodes bytes with the standard alphabet and `=` padding.
-
-    Args:
-        data: The bytes to encode.
-
-    Returns:
-        The base64 text.
-    """
+    """Encodes bytes with the standard alphabet and `=` padding."""
     return _encode(data, _STD, True)
 
 
 def base64_decode(text: StringSpan) raises -> List[UInt8]:
-    """Decodes standard-alphabet base64, with or without padding.
-
-    Args:
-        text: The base64 text.
-
-    Returns:
-        The decoded bytes.
-
-    Raises:
-        Error: If the text has an invalid character, length or trailing bits.
-    """
+    """Decodes standard-alphabet base64, with or without padding."""
     return _decode(text, False)
 
 
 def base64url_encode(data: Span[UInt8, _]) -> String:
-    """Encodes bytes with the URL-safe alphabet and no padding, as JWS does.
-
-    Args:
-        data: The bytes to encode.
-
-    Returns:
-        The base64url text.
-    """
+    """Encodes bytes with the URL-safe alphabet and no padding, as JWS does."""
     return _encode(data, _URL, False)
 
 
 def base64url_decode(text: StringSpan) raises -> List[UInt8]:
-    """Decodes URL-safe base64, with or without padding.
-
-    Args:
-        text: The base64url text.
-
-    Returns:
-        The decoded bytes.
-
-    Raises:
-        Error: If the text has an invalid character, length or trailing bits.
-    """
+    """Decodes URL-safe base64, with or without padding."""
     return _decode(text, True)

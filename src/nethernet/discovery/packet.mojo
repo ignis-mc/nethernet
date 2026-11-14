@@ -43,11 +43,7 @@ comptime _MAX_DECLARED_MESSAGE_DATA = 1140
 
 
 def discovery_key() -> Array[UInt8, 32]:
-    """Computes the fixed key every discovery datagram is sealed with.
-
-    Returns:
-        The SHA-256 of `0xdeadbeef` encoded as a little-endian `u64`.
-    """
+    """Computes the fixed key every discovery datagram is sealed with."""
     var seed: List[UInt8] = [0xEF, 0xBE, 0xAD, 0xDE, 0, 0, 0, 0]
     return sha256(Span(seed))
 
@@ -67,12 +63,7 @@ struct DiscoveryPacket(Copyable):
     """Message only: the signal text."""
 
     def __init__(out self, kind: Int, sender_id: UInt64):
-        """Creates a packet with empty kind-specific fields.
-
-        Args:
-            kind: The packet kind.
-            sender_id: The sender's network ID.
-        """
+        """Creates a packet with empty kind-specific fields."""
         self.kind = kind
         self.sender_id = sender_id
         self.application_data = List[UInt8]()
@@ -81,29 +72,14 @@ struct DiscoveryPacket(Copyable):
 
     @staticmethod
     def request(sender_id: UInt64) -> DiscoveryPacket:
-        """Creates a request packet.
-
-        Args:
-            sender_id: The sender's network ID.
-
-        Returns:
-            The packet.
-        """
+        """Creates a request packet."""
         return DiscoveryPacket(PACKET_REQUEST, sender_id)
 
     @staticmethod
     def response(
         sender_id: UInt64, application_data: Span[UInt8, _]
     ) -> DiscoveryPacket:
-        """Creates a response packet.
-
-        Args:
-            sender_id: The sender's network ID.
-            application_data: The encoded `ServerData`.
-
-        Returns:
-            The packet.
-        """
+        """Creates a response packet."""
         var pk = DiscoveryPacket(PACKET_RESPONSE, sender_id)
         pk.application_data = List[UInt8](application_data)
         return pk^
@@ -112,27 +88,14 @@ struct DiscoveryPacket(Copyable):
     def message(
         sender_id: UInt64, recipient_id: UInt64, data: StringSpan
     ) -> DiscoveryPacket:
-        """Creates a message packet.
-
-        Args:
-            sender_id: The sender's network ID.
-            recipient_id: The network ID the signal is for.
-            data: The signal text.
-
-        Returns:
-            The packet.
-        """
+        """Creates a message packet."""
         var pk = DiscoveryPacket(PACKET_MESSAGE, sender_id)
         pk.recipient_id = recipient_id
         pk.data = String(data)
         return pk^
 
     def encode_payload(self) -> List[UInt8]:
-        """Encodes the plaintext payload, before sealing.
-
-        Returns:
-            The payload bytes, starting with the length field.
-        """
+        """Encodes the plaintext payload, before sealing."""
         var body = List[UInt8]()
         put_u16_le(body, UInt16(self.kind))
         put_u64_le(body, self.sender_id)
@@ -162,17 +125,7 @@ struct DiscoveryPacket(Copyable):
 
 
 def seal_payload(payload: Span[UInt8, _]) raises -> List[UInt8]:
-    """Authenticates and encrypts a plaintext payload into a datagram.
-
-    Args:
-        payload: The plaintext payload, starting with its length field.
-
-    Returns:
-        The datagram: a 32-byte HMAC followed by the encrypted payload.
-
-    Raises:
-        Error: If encryption fails.
-    """
+    """Authenticates and encrypts a plaintext payload into a datagram."""
     var key = discovery_key()
     var tag = hmac[Sha256](Span(key), payload)
     var out = List[UInt8](capacity=32 + len(payload) + 16)
@@ -182,17 +135,7 @@ def seal_payload(payload: Span[UInt8, _]) raises -> List[UInt8]:
 
 
 def open_payload(datagram: Span[UInt8, _]) raises -> List[UInt8]:
-    """Decrypts a datagram and checks its HMAC.
-
-    Args:
-        datagram: The received datagram.
-
-    Returns:
-        The plaintext payload.
-
-    Raises:
-        Error: If the datagram is too short, fails decryption or its HMAC.
-    """
+    """Decrypts a datagram and checks its HMAC."""
     if len(datagram) < 32:
         raise Error("discovery: datagram too short")
     var key = discovery_key()
@@ -205,17 +148,7 @@ def open_payload(datagram: Span[UInt8, _]) raises -> List[UInt8]:
 
 
 def marshal_packet(pk: DiscoveryPacket) raises -> List[UInt8]:
-    """Seals a packet into a datagram.
-
-    Args:
-        pk: The packet to send.
-
-    Returns:
-        The datagram: a 32-byte HMAC followed by the encrypted payload.
-
-    Raises:
-        Error: If encryption fails.
-    """
+    """Seals a packet into a datagram."""
     var payload = pk.encode_payload()
     return seal_payload(Span(payload))
 
@@ -227,16 +160,6 @@ def unmarshal_packet(datagram: Span[UInt8, _]) raises -> DiscoveryPacket:
     like the game, the reader takes everything up to the end of the payload.
     A declared payload length shorter than the payload is accepted, which
     covers older peers that did not count the length field itself.
-
-    Args:
-        datagram: The received datagram.
-
-    Returns:
-        The decoded packet.
-
-    Raises:
-        Error: If the datagram is too short, fails decryption or its HMAC,
-            declares more bytes than it has, or has an unknown packet ID.
     """
     var payload = open_payload(datagram)
     if len(payload) < 4:

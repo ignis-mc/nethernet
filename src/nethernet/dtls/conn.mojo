@@ -153,14 +153,7 @@ struct DtlsConfig(Copyable):
         private_key: Span[UInt8, _],
         random: Span[UInt8, _],
     ):
-        """Creates a configuration with default timing.
-
-        Args:
-            is_client: `True` for the DTLS client role.
-            certificate: The local certificate in DER form.
-            private_key: The local 32-byte P-256 private key.
-            random: At least `DTLS_RANDOM_LEN` fresh random bytes.
-        """
+        """Creates a configuration with default timing."""
         self.is_client = is_client
         self.certificate = List[UInt8](certificate)
         self.private_key = List[UInt8](private_key)
@@ -233,11 +226,7 @@ struct DtlsConn(Movable):
     var _app_in: List[List[UInt8]]
 
     def __init__(out self, config: DtlsConfig):
-        """Creates a connection in the `DTLS_STATE_NEW` state.
-
-        Args:
-            config: The role, credentials and randomness.
-        """
+        """Creates a connection in the `DTLS_STATE_NEW` state."""
         self._config = config.copy()
         self._state = DTLS_STATE_NEW
         self._step = (
@@ -283,9 +272,6 @@ struct DtlsConn(Movable):
         """Begins the handshake.
 
         A client queues its ClientHello; a server starts waiting for one.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
         """
         if self._state != DTLS_STATE_NEW:
             return
@@ -306,27 +292,15 @@ struct DtlsConn(Movable):
             self._fail(String(e), ALERT_HANDSHAKE_FAILURE)
 
     def state(self) -> Int:
-        """Gets the connection state.
-
-        Returns:
-            One of the `DTLS_STATE_*` constants.
-        """
+        """Gets the connection state."""
         return self._state
 
     def failure_reason(self) -> String:
-        """Describes why the connection failed.
-
-        Returns:
-            A short reason, empty unless the state is `DTLS_STATE_FAILED`.
-        """
+        """Describes why the connection failed."""
         return self._failure.copy()
 
     def peer_certificate(self) -> List[UInt8]:
-        """Gets the certificate the peer presented.
-
-        Returns:
-            The DER-encoded certificate, empty before it arrives.
-        """
+        """Gets the certificate the peer presented."""
         return self._peer_certificate.copy()
 
     def srtp_profile(self) -> UInt16:
@@ -334,29 +308,17 @@ struct DtlsConn(Movable):
 
         No SRTP keys are derived; WebRTC peers merely insist on negotiating
         the extension.
-
-        Returns:
-            The profile identifier, or 0 if none was negotiated.
         """
         return self._srtp_profile
 
     def next_timeout(self) -> Int:
-        """Computes when `handle_timeout()` next has work to do.
-
-        Returns:
-            An absolute monotonic time in milliseconds; a very large value if
-            no retransmission is pending.
-        """
+        """Computes when `handle_timeout()` next has work to do."""
         if self._state == DTLS_STATE_HANDSHAKING and len(self._flight) > 0:
             return self._retransmit_at
         return _NEVER
 
     def handle_timeout(mut self, now_ms: Int):
-        """Retransmits the current flight if its timer expired.
-
-        Args:
-            now_ms: The current monotonic time in milliseconds.
-        """
+        """Retransmits the current flight if its timer expired."""
         if self._state != DTLS_STATE_HANDSHAKING or len(self._flight) == 0:
             return
         if now_ms < self._retransmit_at:
@@ -371,35 +333,19 @@ struct DtlsConn(Movable):
         self._emit_flight(now_ms)
 
     def poll_transmit(mut self) -> Optional[List[UInt8]]:
-        """Takes the next datagram to send.
-
-        Returns:
-            A datagram, or `None` when nothing is queued.
-        """
+        """Takes the next datagram to send."""
         if len(self._out) == 0:
             return None
         return self._out.pop(0)
 
     def poll_app_data(mut self) -> Optional[List[UInt8]]:
-        """Takes the next decrypted application-data record.
-
-        Returns:
-            The payload of one record, or `None` when nothing is queued.
-        """
+        """Takes the next decrypted application-data record."""
         if len(self._app_in) == 0:
             return None
         return self._app_in.pop(0)
 
     def send_app_data(mut self, data: Span[UInt8, _]) raises:
-        """Encrypts one application-data record and queues it as a datagram.
-
-        Args:
-            data: The payload, at most 16384 bytes.
-
-        Raises:
-            Error: If the connection is not established or the payload is too
-                large.
-        """
+        """Encrypts one application-data record and queues it as a datagram."""
         if self._state != DTLS_STATE_CONNECTED:
             raise Error("dtls: connection is not established")
         if len(data) > _MAX_RECORD_PLAINTEXT:
@@ -429,10 +375,6 @@ struct DtlsConn(Movable):
         """Processes one inbound datagram, which may hold several records.
 
         Records that fail to parse or authenticate are dropped silently.
-
-        Args:
-            data: The datagram.
-            now_ms: The current monotonic time in milliseconds.
         """
         var pos = 0
         while pos + RECORD_HEADER_LEN <= len(data):

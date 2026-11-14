@@ -57,12 +57,6 @@ def is_stun(data: Span[UInt8, _]) -> Bool:
 
     Used to demultiplex STUN from DTLS on one socket (RFC 7983): the first
     two bits are zero and the magic cookie is present.
-
-    Args:
-        data: The datagram.
-
-    Returns:
-        `True` if the datagram has a STUN header with the magic cookie.
     """
     if len(data) < STUN_HEADER_LEN:
         return False
@@ -97,58 +91,31 @@ struct StunMessage(Copyable):
     """The attributes in wire order."""
 
     def __init__(out self, msg_type: UInt16, transaction_id: Array[UInt8, 12]):
-        """Creates a message with no attributes.
-
-        Args:
-            msg_type: The message type.
-            transaction_id: The transaction identifier.
-        """
+        """Creates a message with no attributes."""
         self.msg_type = msg_type
         self.transaction_id = transaction_id.copy()
         self.attributes = List[StunAttribute]()
 
     def find(self, kind: UInt16) -> Int:
-        """Finds the first attribute of a type.
-
-        Args:
-            kind: The attribute type to look for.
-
-        Returns:
-            The index into `attributes`, or -1 if absent.
-        """
+        """Finds the first attribute of a type."""
         for i in range(len(self.attributes)):
             if self.attributes[i].kind == kind:
                 return i
         return -1
 
     def has(self, kind: UInt16) -> Bool:
-        """Checks whether an attribute is present.
-
-        Args:
-            kind: The attribute type to look for.
-
-        Returns:
-            `True` if at least one attribute of that type exists.
-        """
+        """Checks whether an attribute is present."""
         return self.find(kind) >= 0
 
     def username(self) -> Optional[String]:
-        """Gets the USERNAME attribute.
-
-        Returns:
-            The username, or `None` if absent.
-        """
+        """Gets the USERNAME attribute."""
         var i = self.find(STUN_ATTR_USERNAME)
         if i < 0:
             return None
         return String(from_utf8_lossy=Span(self.attributes[i].value))
 
     def priority(self) -> Optional[UInt32]:
-        """Gets the ICE PRIORITY attribute.
-
-        Returns:
-            The priority, or `None` if absent or malformed.
-        """
+        """Gets the ICE PRIORITY attribute."""
         var i = self.find(STUN_ATTR_PRIORITY)
         if i < 0 or len(self.attributes[i].value) != 4:
             return None
@@ -170,27 +137,15 @@ struct StunMessage(Copyable):
         return out
 
     def ice_controlling(self) -> Optional[UInt64]:
-        """Gets the ICE-CONTROLLING tie-breaker.
-
-        Returns:
-            The tie-breaker, or `None` if absent or malformed.
-        """
+        """Gets the ICE-CONTROLLING tie-breaker."""
         return self._u64(STUN_ATTR_ICE_CONTROLLING)
 
     def ice_controlled(self) -> Optional[UInt64]:
-        """Gets the ICE-CONTROLLED tie-breaker.
-
-        Returns:
-            The tie-breaker, or `None` if absent or malformed.
-        """
+        """Gets the ICE-CONTROLLED tie-breaker."""
         return self._u64(STUN_ATTR_ICE_CONTROLLED)
 
     def xor_mapped_address(self) -> Optional[SocketAddr]:
-        """Gets the IPv4 XOR-MAPPED-ADDRESS attribute.
-
-        Returns:
-            The decoded address, or `None` if absent, malformed or IPv6.
-        """
+        """Gets the IPv4 XOR-MAPPED-ADDRESS attribute."""
         var i = self.find(STUN_ATTR_XOR_MAPPED_ADDRESS)
         if i < 0 or len(self.attributes[i].value) != 8:
             return None
@@ -207,11 +162,7 @@ struct StunMessage(Copyable):
         return SocketAddr(ip, port)
 
     def error_code(self) -> Optional[Int]:
-        """Gets the numeric code of the ERROR-CODE attribute.
-
-        Returns:
-            The code (for example 487), or `None` if absent or malformed.
-        """
+        """Gets the numeric code of the ERROR-CODE attribute."""
         var i = self.find(STUN_ATTR_ERROR_CODE)
         if i < 0 or len(self.attributes[i].value) < 4:
             return None
@@ -224,15 +175,6 @@ def parse_stun(data: Span[UInt8, _]) raises -> StunMessage:
 
     The integrity and fingerprint attributes are parsed but not verified; use
     `verify_message_integrity()` and `verify_fingerprint()` on the raw bytes.
-
-    Args:
-        data: The whole datagram.
-
-    Returns:
-        The decoded message.
-
-    Raises:
-        Error: If the header, the length field or an attribute is malformed.
     """
     if not is_stun(data):
         raise Error("not a STUN message")
@@ -274,13 +216,6 @@ def verify_message_integrity(data: Span[UInt8, _], key: Span[UInt8, _]) -> Bool:
 
     The HMAC-SHA1 covers the message up to the attribute, with the header
     length rewritten to end at the attribute (RFC 8489 section 14.5).
-
-    Args:
-        data: The whole datagram, already known to be STUN.
-        key: The short-term credential password.
-
-    Returns:
-        `True` if the attribute is present and matches.
     """
     var off = _attribute_offset(data, STUN_ATTR_MESSAGE_INTEGRITY)
     if off < 0 or off + 24 > len(data):
@@ -294,14 +229,7 @@ def verify_message_integrity(data: Span[UInt8, _], key: Span[UInt8, _]) -> Bool:
 
 
 def verify_fingerprint(data: Span[UInt8, _]) -> Bool:
-    """Checks the FINGERPRINT attribute of a raw message.
-
-    Args:
-        data: The whole datagram, already known to be STUN.
-
-    Returns:
-        `True` if the last attribute is a FINGERPRINT that matches.
-    """
+    """Checks the FINGERPRINT attribute of a raw message."""
     if len(data) < STUN_HEADER_LEN + 8:
         return False
     var off = len(data) - 8
@@ -328,12 +256,7 @@ struct StunBuilder(Movable):
     var _buf: List[UInt8]
 
     def __init__(out self, msg_type: UInt16, transaction_id: Array[UInt8, 12]):
-        """Starts a message.
-
-        Args:
-            msg_type: The message type.
-            transaction_id: The transaction identifier.
-        """
+        """Starts a message."""
         self._buf = List[UInt8](capacity=128)
         put_u16(self._buf, msg_type)
         put_u16(self._buf, 0)
@@ -342,12 +265,7 @@ struct StunBuilder(Movable):
             self._buf.append(transaction_id[i])
 
     def add(mut self, kind: UInt16, value: Span[UInt8, _]):
-        """Appends an attribute, padding it to four bytes.
-
-        Args:
-            kind: The attribute type.
-            value: The attribute value.
-        """
+        """Appends an attribute, padding it to four bytes."""
         put_u16(self._buf, kind)
         put_u16(self._buf, UInt16(len(value)))
         put_bytes(self._buf, value)
@@ -355,19 +273,11 @@ struct StunBuilder(Movable):
             self._buf.append(0)
 
     def add_username(mut self, username: StringSpan):
-        """Appends a USERNAME attribute.
-
-        Args:
-            username: The username, `remote-ufrag:local-ufrag` for ICE.
-        """
+        """Appends a USERNAME attribute."""
         self.add(STUN_ATTR_USERNAME, username.as_bytes())
 
     def add_priority(mut self, priority: UInt32):
-        """Appends an ICE PRIORITY attribute.
-
-        Args:
-            priority: The priority a peer-reflexive candidate would have.
-        """
+        """Appends an ICE PRIORITY attribute."""
         var v = List[UInt8]()
         put_u32(v, priority)
         self.add(STUN_ATTR_PRIORITY, Span(v))
@@ -378,31 +288,19 @@ struct StunBuilder(Movable):
         self.add(STUN_ATTR_USE_CANDIDATE, Span(v))
 
     def add_ice_controlling(mut self, tie_breaker: UInt64):
-        """Appends an ICE-CONTROLLING attribute.
-
-        Args:
-            tie_breaker: The agent's random tie-breaker.
-        """
+        """Appends an ICE-CONTROLLING attribute."""
         var v = List[UInt8]()
         put_u64(v, tie_breaker)
         self.add(STUN_ATTR_ICE_CONTROLLING, Span(v))
 
     def add_ice_controlled(mut self, tie_breaker: UInt64):
-        """Appends an ICE-CONTROLLED attribute.
-
-        Args:
-            tie_breaker: The agent's random tie-breaker.
-        """
+        """Appends an ICE-CONTROLLED attribute."""
         var v = List[UInt8]()
         put_u64(v, tie_breaker)
         self.add(STUN_ATTR_ICE_CONTROLLED, Span(v))
 
     def add_xor_mapped_address(mut self, addr: SocketAddr):
-        """Appends an IPv4 XOR-MAPPED-ADDRESS attribute.
-
-        Args:
-            addr: The reflexive transport address to report.
-        """
+        """Appends an IPv4 XOR-MAPPED-ADDRESS attribute."""
         var v = List[UInt8]()
         v.append(0)
         v.append(0x01)
@@ -411,12 +309,7 @@ struct StunBuilder(Movable):
         self.add(STUN_ATTR_XOR_MAPPED_ADDRESS, Span(v))
 
     def add_error_code(mut self, code: Int, reason: StringSpan):
-        """Appends an ERROR-CODE attribute.
-
-        Args:
-            code: The error code, 300 to 699.
-            reason: A short human-readable reason.
-        """
+        """Appends an ERROR-CODE attribute."""
         var v = List[UInt8]()
         v.append(0)
         v.append(0)
@@ -428,16 +321,7 @@ struct StunBuilder(Movable):
     def finish(
         mut self, integrity_key: Span[UInt8, _], fingerprint: Bool = True
     ) -> List[UInt8]:
-        """Completes the message and returns its bytes.
-
-        Args:
-            integrity_key: The password for MESSAGE-INTEGRITY; an empty span
-                omits the attribute.
-            fingerprint: Whether to append a FINGERPRINT attribute.
-
-        Returns:
-            The encoded message. The builder is empty afterwards.
-        """
+        """Completes the message and returns its bytes."""
         if len(integrity_key) > 0:
             set_u16(self._buf, 2, UInt16(len(self._buf) + 24 - STUN_HEADER_LEN))
             var tag = hmac[Sha1](integrity_key, Span(self._buf))

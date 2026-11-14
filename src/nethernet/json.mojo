@@ -9,14 +9,7 @@ comptime _MAX_DEPTH = 32
 
 
 def json_quote(text: StringSpan) -> String:
-    """Formats a string as a JSON string literal.
-
-    Args:
-        text: The string to quote.
-
-    Returns:
-        The text in double quotes with the mandatory escapes applied.
-    """
+    """Formats a string as a JSON string literal."""
     var hex = "0123456789abcdef".as_bytes()
     var out = List[UInt8](capacity=text.byte_length() + 2)
     out.append(0x22)
@@ -126,18 +119,7 @@ def _skip_value(src: Span[UInt8, _], pos: Int, depth: Int) raises -> Int:
 
 
 def json_parse_object(text: StringSpan) raises -> Dict[String, String]:
-    """Splits a JSON object into its members.
-
-    Args:
-        text: The JSON text of one object.
-
-    Returns:
-        A map from member name to the raw JSON text of its value. A repeated
-        name keeps the last value.
-
-    Raises:
-        Error: If the text is not a well-formed object.
-    """
+    """Splits a JSON object into its members."""
     var src = text.as_bytes()
     var out = Dict[String, String]()
     var p = _skip_space(src, 0)
@@ -211,18 +193,7 @@ def _put_utf8(mut out: List[UInt8], cp: UInt32):
 
 
 def json_parse_string(raw: StringSpan) raises -> String:
-    """Decodes a JSON string literal.
-
-    Args:
-        raw: The literal including its double quotes; surrounding white space
-            is allowed.
-
-    Returns:
-        The string with escapes resolved.
-
-    Raises:
-        Error: If the text is not one well-formed string literal.
-    """
+    """Decodes a JSON string literal."""
     var src = raw.strip().as_bytes()
     if len(src) < 2 or src[0] != 0x22 or src[len(src) - 1] != 0x22:
         raise Error("JSON: expected a string")
@@ -274,18 +245,7 @@ def json_parse_string(raw: StringSpan) raises -> String:
 
 
 def json_parse_int(raw: StringSpan) raises -> Int:
-    """Reads a JSON number as an integer, dropping any fraction.
-
-    Args:
-        raw: The number text; surrounding white space is allowed.
-
-    Returns:
-        The integer part of the number.
-
-    Raises:
-        Error: If the text is not a number, uses an exponent, or is too
-            large.
-    """
+    """Reads a JSON number as an integer, dropping any fraction."""
     var src = raw.strip().as_bytes()
     var p = 0
     var negative = False

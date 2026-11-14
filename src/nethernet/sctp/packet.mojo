@@ -50,26 +50,12 @@ comptime CHUNK_FORWARD_TSN = 192
 
 
 def pad4(n: Int) -> Int:
-    """Rounds a length up to a multiple of 4.
-
-    Args:
-        n: The unpadded length.
-
-    Returns:
-        The smallest multiple of 4 that is at least `n`.
-    """
+    """Rounds a length up to a multiple of 4."""
     return (n + 3) & ~3
 
 
 def packet_checksum(packet: Span[UInt8, _]) -> UInt32:
-    """Computes the CRC32c of a packet as if its checksum field were zero.
-
-    Args:
-        packet: The whole SCTP packet, at least 12 bytes long.
-
-    Returns:
-        The checksum. Its least significant byte goes first on the wire.
-    """
+    """Computes the CRC32c of a packet as if its checksum field were zero."""
     var zeros = Array[UInt8, 4](fill=0)
     var c = crc32c_update(0xFFFFFFFF, packet[0:8])
     c = crc32c_update(c, Span(zeros))
@@ -78,14 +64,7 @@ def packet_checksum(packet: Span[UInt8, _]) -> UInt32:
 
 
 def stored_checksum(packet: Span[UInt8, _]) -> UInt32:
-    """Reads the checksum field of a packet.
-
-    Args:
-        packet: The whole SCTP packet, at least 12 bytes long.
-
-    Returns:
-        The checksum carried in the common header.
-    """
+    """Reads the checksum field of a packet."""
     return (
         UInt32(packet[8])
         | (UInt32(packet[9]) << 8)
@@ -104,12 +83,6 @@ def begin_packet(
 
     Append chunks after it and call `finish_packet()` last. `out` must hold
     nothing but this packet.
-
-    Args:
-        out: The empty buffer that will hold the packet.
-        source_port: The sender's SCTP port.
-        destination_port: The receiver's SCTP port.
-        verification_tag: The receiver's initiate tag, or 0 for INIT.
     """
     put_u16(out, source_port)
     put_u16(out, destination_port)
@@ -118,11 +91,7 @@ def begin_packet(
 
 
 def finish_packet(mut out: List[UInt8]):
-    """Computes the checksum of a packet and stores it in the header.
-
-    Args:
-        out: The packet built with `begin_packet()` and chunk encoders.
-    """
+    """Computes the checksum of a packet and stores it in the header."""
     var c = packet_checksum(Span(out))
     out[8] = UInt8(c & 0xFF)
     out[9] = UInt8((c >> 8) & 0xFF)
@@ -131,16 +100,7 @@ def finish_packet(mut out: List[UInt8]):
 
 
 def begin_chunk(mut out: List[UInt8], kind: UInt8, flags: UInt8) -> Int:
-    """Appends a chunk header with a placeholder length.
-
-    Args:
-        out: The buffer to append to.
-        kind: The chunk type.
-        flags: The chunk flags.
-
-    Returns:
-        The offset of the chunk header, to pass to `end_chunk()`.
-    """
+    """Appends a chunk header with a placeholder length."""
     var start = len(out)
     put_u8(out, kind)
     put_u8(out, flags)
@@ -149,12 +109,7 @@ def begin_chunk(mut out: List[UInt8], kind: UInt8, flags: UInt8) -> Int:
 
 
 def end_chunk(mut out: List[UInt8], start: Int):
-    """Patches the length of a chunk and pads it to a multiple of 4 bytes.
-
-    Args:
-        out: The buffer holding the chunk.
-        start: The offset returned by `begin_chunk()`.
-    """
+    """Patches the length of a chunk and pads it to a multiple of 4 bytes."""
     var length = len(out) - start
     set_u16(out, start + 2, UInt16(length))
     while (len(out) - start) % 4 != 0:
@@ -174,14 +129,7 @@ struct ChunkRef(ImplicitlyCopyable):
     """The length of the chunk value, without header or padding."""
 
     def __init__(out self, kind: UInt8, flags: UInt8, offset: Int, length: Int):
-        """Creates a chunk reference.
-
-        Args:
-            kind: The chunk type.
-            flags: The chunk flags.
-            offset: The offset of the chunk value in the packet.
-            length: The length of the chunk value.
-        """
+        """Creates a chunk reference."""
         self.kind = kind
         self.flags = flags
         self.offset = offset
@@ -206,13 +154,7 @@ struct PacketView(Movable):
         destination_port: UInt16,
         verification_tag: UInt32,
     ):
-        """Creates a view with no chunks.
-
-        Args:
-            source_port: The sender's SCTP port.
-            destination_port: The receiver's SCTP port.
-            verification_tag: The verification tag of the packet.
-        """
+        """Creates a view with no chunks."""
         self.source_port = source_port
         self.destination_port = destination_port
         self.verification_tag = verification_tag
@@ -224,16 +166,6 @@ def parse_packet(packet: Span[UInt8, _]) raises -> PacketView:
 
     The final chunk may omit its padding; every other chunk must be padded to
     4 bytes.
-
-    Args:
-        packet: The whole SCTP packet.
-
-    Returns:
-        The header fields and the location of every chunk.
-
-    Raises:
-        Error: If the packet is too short or too long, the checksum is wrong,
-            or a chunk length is below 4 or runs past the end.
     """
     var size = len(packet)
     if size < SCTP_HEADER_SIZE:
@@ -281,13 +213,7 @@ struct Tlv(ImplicitlyCopyable):
     """The length of the item value, without header or padding."""
 
     def __init__(out self, kind: UInt16, offset: Int, length: Int):
-        """Creates an item reference.
-
-        Args:
-            kind: The parameter or cause type.
-            offset: The offset of the item value.
-            length: The length of the item value.
-        """
+        """Creates an item reference."""
         self.kind = kind
         self.offset = offset
         self.length = length
@@ -297,17 +223,6 @@ def parse_tlvs(data: Span[UInt8, _], start: Int) raises -> List[Tlv]:
     """Splits a run of parameters or error causes into items.
 
     Every item but the last must be padded to 4 bytes.
-
-    Args:
-        data: The chunk value.
-        start: The offset of the first item.
-
-    Returns:
-        The location of every item, in wire order.
-
-    Raises:
-        Error: If an item header is truncated or a length is below 4 or runs
-            past the end.
     """
     var items = List[Tlv]()
     var size = len(data)
@@ -330,14 +245,6 @@ def begin_param(mut out: List[UInt8], chunk_start: Int, kind: UInt16) -> Int:
 
     The previous item is padded only now, when another one follows, so that
     the chunk length leaves out the padding of the final item.
-
-    Args:
-        out: The buffer holding the chunk being built.
-        chunk_start: The offset of the chunk header.
-        kind: The parameter or cause type.
-
-    Returns:
-        The offset of the item header, to pass to `end_param()`.
     """
     while (len(out) - chunk_start) % 4 != 0:
         out.append(0)
@@ -348,10 +255,5 @@ def begin_param(mut out: List[UInt8], chunk_start: Int, kind: UInt16) -> Int:
 
 
 def end_param(mut out: List[UInt8], start: Int):
-    """Patches the length of a parameter or error cause.
-
-    Args:
-        out: The buffer holding the item.
-        start: The offset returned by `begin_param()`.
-    """
+    """Patches the length of a parameter or error cause."""
     set_u16(out, start + 2, UInt16(len(out) - start))

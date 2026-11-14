@@ -65,18 +65,7 @@ def _ecb_decrypt_with(
 def ecb_encrypt_pkcs7(
     key: Span[UInt8, _], plaintext: Span[UInt8, _], mut out: List[UInt8]
 ) raises:
-    """Encrypts with AES-ECB after applying PKCS#7 padding.
-
-    Args:
-        key: The 16, 24 or 32 byte AES key.
-        plaintext: The message, of any length.
-        out: Receives the ciphertext: `plaintext` plus 1 to 16 bytes of
-            padding, so always a positive multiple of 16 bytes. Existing
-            contents are kept.
-
-    Raises:
-        Error: If the key length is not valid for AES.
-    """
+    """Encrypts with AES-ECB after applying PKCS#7 padding."""
     _ecb_encrypt_with(Aes(key), plaintext, out)
 
 
@@ -86,16 +75,5 @@ def ecb_decrypt_pkcs7(
     """Decrypts with AES-ECB and removes PKCS#7 padding.
 
     When this raises, `out` is left unchanged.
-
-    Args:
-        key: The 16, 24 or 32 byte AES key.
-        ciphertext: The padded ciphertext.
-        out: Receives the plaintext without its padding. Existing contents
-            are kept.
-
-    Raises:
-        Error: If the key length is not valid for AES, if the ciphertext is
-            empty or not a multiple of 16 bytes, or if the padding is
-            malformed.
     """
     _ecb_decrypt_with(Aes(key), ciphertext, out)

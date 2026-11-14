@@ -67,14 +67,6 @@ def ecdsa_signature_to_der(raw: Span[UInt8, _]) -> List[UInt8]:
     Each integer gets the minimal encoding: leading zero bytes are dropped
     and a single `0x00` is put back when the top bit would otherwise mark
     the value as negative.
-
-    Args:
-        raw: The signature `r || s`, two big-endian integers of equal
-            width. The length must be even; the span is split in the
-            middle.
-
-    Returns:
-        The DER encoding.
     """
     var half = len(raw) // 2
     var r = raw[0:half]
@@ -155,19 +147,6 @@ def ecdsa_signature_from_der(
     integers must be non-negative, and nothing may follow the sequence or
     its second integer. It does not check that `r` and `s` are in range for
     a curve; signature verification does.
-
-    Args:
-        der: The DER encoding.
-        scalar_len: The byte width of each integer in the result: 32 for
-            P-256, 48 for P-384.
-
-    Returns:
-        The signature `r || s`, each integer left-padded with zeros to
-        `scalar_len` bytes.
-
-    Raises:
-        Error: If the encoding is malformed or not DER, or if an integer
-            does not fit in `scalar_len` bytes.
     """
     if scalar_len <= 0:
         raise Error("DER signature: scalar length must be positive")
